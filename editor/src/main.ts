@@ -4,11 +4,12 @@ import * as monaco from 'monaco-editor/esm/vs/editor/edcore.main'
 import { GRAMMARS } from '../languages.mjs'
 import { registerInlineAi } from './ai.ts'
 import { detectLanguage } from './detect.ts'
+import { NATIVE_OPTIONS, PLUGIN_OPTIONS, settingOptions, themeFor } from './editor-options.ts'
 import { smallestEdit } from './edits.ts'
 import { startLanguageServer } from './lsp.ts'
 import { grammarLoaders, grammarOf } from './languages.generated.ts'
 import { prepareLanguageService, stepAsideBuiltInTypeScript, workerFileFor } from './services.ts'
-import { followOrcaTheme } from './theme.ts'
+import { followOrcaTheme, isDark } from './theme.ts'
 
 const page = window.__LANGUAGE__ ?? 'plaintext'
 // Re-reading the content for the language is cheap but pointless on every keystroke.
@@ -37,41 +38,18 @@ async function start(): Promise<void> {
   // A language with a service of its own needs it ready, and sometimes a model name, before the model exists.
   const name = await prepareLanguageService(monaco, language, session.value)
   const model = monaco.editor.createModel(session.value, language, name)
+  // Orca's own editor options first, then this plugin's additions, then the person's settings of this plugin.
   const editor = monaco.editor.create(root, {
     model,
-    theme: 'orca',
+    theme: themeFor(isDark()),
     readOnly: session.readOnly,
-    automaticLayout: true,
-    fontFamily: "'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas, monospace",
-    fontLigatures: true,
-    fontSize: 13,
-    lineHeight: 20,
-    padding: { top: 12, bottom: 12 },
-    tabSize: 2,
-    detectIndentation: true,
-    minimap: { enabled: true, renderCharacters: false, maxColumn: 100 },
-    scrollBeyondLastLine: false,
-    smoothScrolling: true,
-    cursorBlinking: 'smooth',
-    cursorSmoothCaretAnimation: 'on',
-    bracketPairColorization: { enabled: true },
-    guides: { bracketPairs: true, indentation: true },
-    stickyScroll: { enabled: true },
-    renderWhitespace: 'selection',
-    renderLineHighlight: 'all',
-    folding: true,
-    foldingHighlight: false,
-    linkedEditing: true,
-    formatOnPaste: true,
-    wordWrap: 'off',
-    accessibilitySupport: 'auto',
-    inlineSuggest: { enabled: true, mode: 'subwordSmart', showToolbar: 'onHover' },
-    // Why: the AI's gray text is the main suggestion. A word-completion popup or its inline preview
-    // would take its place, so the menu opens only on a trigger character or Ctrl+Space.
-    suggest: { preview: false, showStatusBar: true },
-    quickSuggestions: false,
-    parameterHints: { enabled: true },
-    hover: { enabled: true, delay: 350 }
+    ...NATIVE_OPTIONS,
+    ...PLUGIN_OPTIONS,
+    ...settingOptions(await orca.settings.get())
+  })
+  // A setting changed (font size, wrap, minimap ...): apply it without reopening the file.
+  orca.settings.onDidChange(() => {
+    void orca.settings.get().then((settings) => editor.updateOptions(settingOptions(settings)))
   })
 
   // The suggestion prompt names the file; a frame never learns the real name, so use its type.

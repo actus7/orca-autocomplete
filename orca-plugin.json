@@ -74,6 +74,36 @@
         "description": "Start the language servers already installed on this computer (such as rust-analyzer, gopls, pyright or typescript-language-server) for errors, hover, go to definition and more in the Autocomplete editor. Needs the file to be inside an Orca workspace.",
         "type": "boolean",
         "default": true
+      },
+      {
+        "key": "editorFontFamily",
+        "title": "Editor font",
+        "description": "Orca does not share its editor font with plugins yet. Type the same font name here to match it; leave it empty for Orca's default.",
+        "type": "string",
+        "default": ""
+      },
+      {
+        "key": "editorFontSize",
+        "title": "Editor font size",
+        "description": "Orca does not share its editor font size with plugins yet. Set the same size here to match it; 0 uses Orca's default (13).",
+        "type": "integer",
+        "default": 0,
+        "minimum": 0,
+        "maximum": 24
+      },
+      {
+        "key": "editorWordWrap",
+        "title": "Wrap long lines",
+        "description": "Matches Orca's default of wrapping long lines. Turn it off here if you turned it off in Orca.",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "editorMinimap",
+        "title": "Show the minimap",
+        "description": "Matches Orca's default of no minimap. Turn it on here if you turned it on in Orca.",
+        "type": "boolean",
+        "default": false
       }
     ],
     "commands": [
