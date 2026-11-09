@@ -6,6 +6,7 @@ import { registerInlineAi } from './ai.ts'
 import { detectLanguage } from './detect.ts'
 import { smallestEdit } from './edits.ts'
 import { grammarLoaders, grammarOf } from './languages.generated.ts'
+import { prepareLanguageService, workerFileFor } from './services.ts'
 import { followOrcaTheme } from './theme.ts'
 
 const page = window.__LANGUAGE__ ?? 'plaintext'
@@ -13,9 +14,9 @@ const page = window.__LANGUAGE__ ?? 'plaintext'
 const DETECT_DELAY_MS = 800
 const root = document.getElementById('root') as HTMLElement
 
-// Monaco computes some things (word ranges, links, diffs) in a worker; ours sits beside this file.
+// Monaco and its language services compute in workers; each one sits beside this file.
 window.MonacoEnvironment = {
-  getWorker: () => new Worker(new URL('./editor.worker.js', import.meta.url), { type: 'module' })
+  getWorker: (_id, label) => new Worker(new URL(workerFileFor(label), import.meta.url), { type: 'module' })
 }
 
 async function start(): Promise<void> {
@@ -29,7 +30,9 @@ async function start(): Promise<void> {
   // Why: only this file's grammar loads, so a Python file does not download the C++ rules.
   await grammarLoaders[grammarOf[language]]?.()
 
-  const model = monaco.editor.createModel(session.value, language)
+  // A language with a service of its own needs it ready, and sometimes a model name, before the model exists.
+  const name = await prepareLanguageService(monaco, language, session.value)
+  const model = monaco.editor.createModel(session.value, language, name)
   const editor = monaco.editor.create(root, {
     model,
     theme: 'orca',
@@ -80,6 +83,7 @@ async function start(): Promise<void> {
         const detected = detectLanguage(model.getValue())
         if (detected !== model.getLanguageId()) {
           await grammarLoaders[grammarOf[detected]]?.()
+          await prepareLanguageService(monaco, detected, model.getValue())
           monaco.editor.setModelLanguage(model, detected)
         }
       }, DETECT_DELAY_MS)

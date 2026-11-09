@@ -78,7 +78,9 @@ async function bundle() {
   }
   // Why two builds: the worker is loaded on its own and must not depend on shared chunks.
   await build({ ...shared, entryPoints: { main: `${editorDir}src/main.ts` }, splitting: true, chunkNames: 'chunks/[name]-[hash]' })
-  await build({ ...shared, entryPoints: { 'editor.worker': `${editorDir}src/editor.worker.ts` } })
+  for (const worker of ['editor', 'ts', 'css', 'html']) {
+    await build({ ...shared, entryPoints: { [`${worker}.worker`]: `${editorDir}src/${worker}.worker.ts` } })
+  }
 }
 
 function report(dir, prefix = '') {
