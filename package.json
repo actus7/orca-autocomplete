@@ -4,10 +4,13 @@
   "type": "module",
   "scripts": {
     "build": "node editor/build.mjs",
-    "test": "node --test src/ editor/"
+    "test": "node --test src/ editor/",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
+    "@types/node": "^26.6.6",
     "esbuild": "^0.28.2",
-    "monaco-editor": "^0.52.2"
+    "monaco-editor": "^0.52.2",
+    "typescript": "^5.9.3"
   }
 }

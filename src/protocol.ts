@@ -2,6 +2,10 @@
 export {}
 
 declare module 'orca' {
+  export type LspStatus =
+    | { state: 'ready'; server: string; path: string; uri: string; capabilities: Record<string, unknown> }
+    | { state: 'none' | 'off' | 'ambiguous' | 'no-file' }
+    | { state: 'error'; message: string }
   export type StatusState = 'on' | 'off' | 'setup' | 'slow' | 'error'
   export type StatusSnapshot = {
     state: StatusState
@@ -26,6 +30,19 @@ declare module 'orca' {
       input: { format: 'openai' | 'anthropic'; baseUrl: string; key: string }
       output: { ok: boolean; models: string[]; message: string }
     }
+    /** The editor asks for a language server for its document; the answer says what is running or why not. */
+    'lsp.attach': {
+      input: { docId: string; language: string; extensions: string[]; content: string }
+      output: { status: LspStatus }
+    }
+    /** The document's whole new text, so the server stays in step. */
+    'lsp.sync': { input: { docId: string; text: string }; output: Record<string, never> }
+    /** Any LSP request about the document (the worker adds the document's address). */
+    'lsp.request': {
+      input: { docId: string; method: string; params: Record<string, unknown> }
+      output: { result: unknown; error?: string }
+    }
+    'lsp.detach': { input: { docId: string }; output: Record<string, never> }
     /** One suggestion for the text around the cursor of the plugin's own editor; '' when there is none. */
     'completion.ask': {
       input: { path: string; languageId: string; prefix: string; suffix: string }
@@ -51,5 +68,7 @@ declare module 'orca' {
   // oxlint-disable-next-line typescript/consistent-type-definitions -- declaration merging needs an interface
   interface PluginPanelEvents {
     'status.changed': StatusSnapshot
+    'lsp.diagnostics': { docId: string; diagnostics: unknown[] }
+    'lsp.status': { docId: string; status: LspStatus }
   }
 }

@@ -6,7 +6,7 @@ Gray suggestions as you type, from the AI provider you choose. Press **Tab** to 
 
 Works with **OpenAI**, **Anthropic**, **OpenRouter**, **Ollama** (free, on your computer) and any API that speaks the OpenAI or Anthropic format.
 
-> **Requires Orca 1.4.256 or newer.** That release adds the `editor.inlineCompletion` hook this plugin uses.
+> **Requires Orca 1.4.248 or newer.** The plugin brings its own editor (Monaco), so it does not depend on any change to Orca itself.
 
 <p align="center"><img src="assets/screenshot-editor.png" alt="A gray suggestion at the cursor, with a Tab key hint" width="720"></p>
 
@@ -17,7 +17,18 @@ It takes about two minutes.
 1. **Install** the plugin from *Settings → Plugins*.
 2. **Open the Autocomplete panel**: the lightning icon in the right sidebar.
 3. **Choose your provider**, paste your API key, then type a model name or pick one from the list your provider offers. Press **Save and test**. Ollama needs no key.
-4. **Type in any file and pause for a moment.** The suggestion appears in gray.
+4. **Open a code file and pause while typing.** The suggestion appears in gray.
+
+Files in the languages below open in the plugin's editor by default. Files Orca always opens itself (`.ts`, `.md`, `.yaml`, `.env` and a few more) stay in Orca's editor; switch them with the view toggle in the file's tab.
+
+## The editor
+
+A full code editor (Monaco, the engine behind VS Code) that follows Orca's theme and stays in step with the file: saving, unsaved-change and outside-change handling are Orca's own.
+
+- **Languages with their own editor:** TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin, C#, C and C++, PHP, Ruby, Swift, Shell, SQL, HTML. A **Code** editor handles CSS, SCSS, Less, XML, YAML, Markdown, Dart, Lua, R, PowerShell, Batch, Scala, Elixir, Clojure, Perl, F#, Julia, Terraform, Protocol Buffers, GraphQL and Dockerfile, recognising the language from the file's content.
+- **Built in, nothing to install:** errors, completion, hover, go to definition and rename for TypeScript and JavaScript, HTML and CSS.
+- **Language servers:** if a language server is installed on your computer (`rust-analyzer`, `gopls`, `pyright`, `clangd`, `typescript-language-server`, `kotlin-language-server`, `csharp-ls`, `intelephense`, `solargraph`, `sourcekit-lsp`, `bash-language-server`, `lua-language-server`, `yaml-language-server`, Dart's), the plugin starts it for files inside an Orca workspace and adds its errors, completion, hover, signature help, definitions, references, outline, formatting, rename and quick fixes. Turn it off in *Settings → Plugins → Autocomplete → Use language servers*. If the server cannot start, a red note in the editor's corner says why.
+- **Limits:** a language server needs the file to be inside a local Orca workspace (remote hosts are not reached). Definitions and renames that touch other files are not followed yet. TypeScript needs the project's own `typescript` package in `node_modules`.
 
 If something is not right, the panel says what happened and what to do next.
 
@@ -52,7 +63,7 @@ The command palette also has **Autocomplete: Turn on or off** and **Autocomplete
 
 ## Privacy
 
-When you pause typing, the text around your cursor (up to about 6,000 characters before it and 2,000 after, plus the file name and language) is sent to the provider **you** chose, and nowhere else. Your API key is stored encrypted by Orca and is tied to the provider it was saved for: if you switch providers, the panel asks for a new key, and the old one is never sent to the new one. The plugin has no telemetry and no analytics. Turn it off any time from the panel or the status bar.
+When you pause typing, the text around your cursor (up to about 6,000 characters before it and 2,000 after, plus the file name and language) is sent to the provider **you** chose, and nowhere else. Your API key is stored encrypted by Orca and is tied to the provider it was saved for: if you switch providers, the panel asks for a new key, and the old one is never sent to the new one. Language servers run on your computer and nothing from them is sent anywhere. The plugin has no telemetry and no analytics. Turn it off any time from the panel or the status bar.
 
 ## Troubleshooting
 
@@ -80,8 +91,17 @@ O painel, a barra de status e os avisos aparecem em português quando o Orca est
 ## For developers
 
 ```sh
-npm test    # request/response logic, UI strings, worker behavior; no dependencies (Node 22.18+)
+npm install
+npm test            # worker, language server bridge, editor logic (Node 22.18+)
+npm run typecheck   # types for the worker, the panel and the editor
+npm run build       # bundles Monaco and the editor into editor/dist (commit the result)
 ```
+
+Orca installs a plugin as plain files, so `editor/dist` is committed; its source is `editor/src`. `editor/languages.mjs` is the one table that drives the pages, the loaders and the `customEditors` of the manifest, and a test keeps them in line with Orca's limits (16 editors, 32 extensions each).
+
+### Permissions
+
+The plugin asks Orca for: its own settings, secrets and storage; and `workspace:read`, only to learn the folders of your local workspaces so a language server can be started in the right one. It does not ask to open files, run commands or change workspaces.
 
 The listing images are rendered from `assets/templates` with `assets/build.mjs` (needs Playwright; see the header of that file).
 

@@ -1,0 +1,32 @@
+{
+  "extends": "./.orca/types/tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "types": [
+      "orca",
+      "orca-host",
+      "orca-frame",
+      "orca-worker",
+      "orca-services",
+      "node"
+    ],
+    "skipLibCheck": true,
+    "typeRoots": [
+      "./.orca/types",
+      "./node_modules/@types"
+    ]
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "editor/src/**/*.ts",
+    "editor/languages.mjs"
+  ],
+  "exclude": [
+    "**/*.test.ts",
+    "src/lsp/fixtures/**",
+    "src/panel.check.ts",
+    "editor/src/languages.generated.ts"
+  ]
+}

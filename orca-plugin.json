@@ -67,6 +67,13 @@
         "default": 96,
         "minimum": 16,
         "maximum": 512
+      },
+      {
+        "key": "languageServers",
+        "title": "Use language servers",
+        "description": "Start the language servers already installed on this computer (such as rust-analyzer, gopls, pyright or typescript-language-server) for errors, hover, go to definition and more in the Autocomplete editor. Needs the file to be inside an Orca workspace.",
+        "type": "boolean",
+        "default": true
       }
     ],
     "commands": [
@@ -312,6 +319,9 @@
     },
     {
       "kind": "storage:own"
+    },
+    {
+      "kind": "workspace:read"
     }
   ],
   "icon": "assets/icon.png",

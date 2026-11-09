@@ -5,8 +5,9 @@ import { GRAMMARS } from '../languages.mjs'
 import { registerInlineAi } from './ai.ts'
 import { detectLanguage } from './detect.ts'
 import { smallestEdit } from './edits.ts'
+import { startLanguageServer } from './lsp.ts'
 import { grammarLoaders, grammarOf } from './languages.generated.ts'
-import { prepareLanguageService, workerFileFor } from './services.ts'
+import { prepareLanguageService, stepAsideBuiltInTypeScript, workerFileFor } from './services.ts'
 import { followOrcaTheme } from './theme.ts'
 
 const page = window.__LANGUAGE__ ?? 'plaintext'
@@ -21,6 +22,9 @@ window.MonacoEnvironment = {
 
 async function start(): Promise<void> {
   // Resolves once Orca has sent the theme and the first document.
+  if (!orca.document) {
+    throw new Error('this page only works as an Orca editor')
+  }
   const session = await orca.document.session()
   followOrcaTheme()
 
@@ -73,6 +77,18 @@ async function start(): Promise<void> {
   // The suggestion prompt names the file; a frame never learns the real name, so use its type.
   const fileName = (): string => `untitled${GRAMMARS.find((entry) => entry.id === model.getLanguageId())?.extensions[0] ?? ''}`
   registerInlineAi(monaco, fileName)
+
+  // A language server installed on this computer, when there is one and the file is in a workspace.
+  const grammar = GRAMMARS.find((entry) => entry.id === language)
+  void startLanguageServer(monaco, model, editor, {
+    language,
+    extensions: [...(grammar?.extensions ?? []), ...(grammar?.filenames ?? [])],
+    onServed: () => {
+      if (language === 'typescript' || language === 'javascript') {
+        void stepAsideBuiltInTypeScript()
+      }
+    }
+  }).catch((error: unknown) => console.warn('language server unavailable', error))
 
   if (generic) {
     // A new empty file gets its language when it first has something to recognise.

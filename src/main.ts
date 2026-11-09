@@ -2,6 +2,7 @@ import type { Activate, OrcaWorkerApi } from 'orca/worker'
 import { complete, type CompletionContext, type Provider, type ProviderFormat } from './complete.ts'
 import { explainFailure } from './explain.ts'
 import { pickLocale, translator, type Translate } from './i18n.ts'
+import { LspManager } from './lsp/manager.ts'
 import { BENCH_BATCH_SIZE, isExpectedAnswer, listModels, median } from './models.ts'
 import { presetFor } from './presets.ts'
 
@@ -139,6 +140,19 @@ function tooltipOf(state: State, config: Config | null, stats: Stats, t: Transla
         : t('tip.on', { where, ms: stats.lastMs, count: stats.suggested })
   }
 }
+
+// The language servers belong to the running worker; deactivate stops them with it.
+let lspManager: LspManager | null = null
+
+export function deactivate(): void {
+  lspManager?.dispose()
+  lspManager = null
+}
+
+const WORKSPACE_ROOTS_CACHE_MS = 5000
+
+/** Orca names this computer's own host `local` (older builds leave the host out). Remote hosts are out of reach. */
+const isLocalHost = (hostId: string | null): boolean => hostId === null || hostId === 'local'
 
 const activate: Activate = (orca) => {
   // ponytail: insertion-ordered Map as LRU; swap for a real cache only if hit rate matters.
@@ -337,6 +351,51 @@ const activate: Activate = (orca) => {
   } catch (error) {
     orca.log(`native inline completion hook unavailable: ${error instanceof Error ? error.message : String(error)}`)
   }
+
+  // Workspace folders on this computer: a language server needs a project folder, and a remote one is out of reach.
+  let roots: { at: number; paths: string[] } = { at: 0, paths: [] }
+  async function workspaceRoots(): Promise<string[]> {
+    if (Date.now() - roots.at < WORKSPACE_ROOTS_CACHE_MS) {
+      return roots.paths
+    }
+    try {
+      const { workspaces } = await orca.host.call('workspace.list', {})
+      roots = { at: Date.now(), paths: workspaces.filter((w) => isLocalHost(w.hostId)).map((w) => w.path) }
+    } catch (error) {
+      orca.log(`workspace list unavailable: ${error instanceof Error ? error.message : String(error)}`)
+      roots = { at: Date.now(), paths: [] }
+    }
+    return roots.paths
+  }
+
+  lspManager = new LspManager({
+    workspaceRoots,
+    post: ((event: 'lsp.diagnostics' | 'lsp.status', payload: never) => orca.panels.post(event, payload)) as never,
+    log: (message) => orca.log(message)
+  })
+  const lsp = lspManager
+
+  orca.panels.handle('lsp.attach', async (input) => {
+    if ((await orca.settings.get('languageServers')) === false) {
+      return { status: { state: 'off' as const } }
+    }
+    return { status: await lsp.attach(input) }
+  })
+  orca.panels.handle('lsp.sync', async ({ docId, text }) => {
+    lsp.sync(docId, text)
+    return {}
+  })
+  orca.panels.handle('lsp.request', async ({ docId, method, params }) => {
+    try {
+      return { result: await lsp.request(docId, method, params) }
+    } catch (error) {
+      return { result: null, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+  orca.panels.handle('lsp.detach', async ({ docId }) => {
+    lsp.detach(docId)
+    return {}
+  })
 
   orca.panels.handle('completion.ask', async (context) => ({ suggestion: await suggest(context) }))
 

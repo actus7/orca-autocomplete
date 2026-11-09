@@ -87,3 +87,29 @@ export function workerFileFor(label: string): string {
       return './editor.worker.js'
   }
 }
+
+/**
+ * Turns the built-in TypeScript and JavaScript service off. Used when a real language server serves
+ * the file, so errors, completion and hover do not appear twice.
+ */
+export async function stepAsideBuiltInTypeScript(): Promise<void> {
+  const ts = await typescript()
+  for (const defaults of [ts.typescriptDefaults, ts.javascriptDefaults]) {
+    defaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: true, noSuggestionDiagnostics: true })
+    defaults.setModeConfiguration({
+      completionItems: false,
+      hovers: false,
+      documentSymbols: false,
+      definitions: false,
+      references: false,
+      documentHighlights: false,
+      rename: false,
+      diagnostics: false,
+      documentRangeFormattingEdits: false,
+      signatureHelp: false,
+      onTypeFormattingEdits: false,
+      codeActions: false,
+      inlayHints: false
+    })
+  }
+}
