@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { readDocuments } from './reader.ts'
 import { resolveOrcaEditor } from './resolve.ts'
+import { parseUserDataDir, userDataDirOfHost } from './host-process.ts'
 import { activeProfileId, findProfileDatabase, userDataCandidates } from './userdata.ts'
 import { EditorSettingsWatcher, fileStamp } from './watcher.ts'
 
@@ -83,21 +84,50 @@ test('activeProfileId accepts only a known profile with a safe id, and falls bac
   assert.equal(activeProfileId('/d', (path) => (path.endsWith('.bak') ? index('p1', ['p1']) : '{broken')), 'p1')
 })
 
-test('findProfileDatabase picks the packaged Orca from inside app.asar, the dev one otherwise', () => {
-  const home = '/home/me'
-  const folders = userDataCandidates(home, 'linux', '/cfg')
-  const exists = () => true
-  const read = (path: string) => (path.includes('orca-dev') ? JSON.stringify({ activeProfileId: 'dev', profiles: [{ id: 'dev' }] }) : JSON.stringify({ activeProfileId: 'main', profiles: [{ id: 'main' }] }))
-  const common = { home, platform: 'linux', xdgConfig: '/cfg', exists, read }
-  assert.equal(findProfileDatabase({ ...common, hostEntry: '/opt/Orca/resources/app.asar/out/main/plugin-host-entry.js' }), join(folders.packaged, 'profiles', 'main', 'profile-state.db'))
-  assert.equal(findProfileDatabase({ ...common, hostEntry: '/src/orca/out/main/plugin-host-entry.js' }), join(folders.development, 'profiles', 'dev', 'profile-state.db'))
+const profileIndex = (id: string) => JSON.stringify({ activeProfileId: id, profiles: [{ id }] })
+
+test('findProfileDatabase uses the usual folder of this kind of Orca once it holds this plugin’s data', async () => {
+  const folders = userDataCandidates('/home/me', 'linux', '/cfg')
+  const present = [join(folders.packaged, 'orca-profile-index.json'), join(folders.packaged, 'plugins-data', 'actus7.autocomplete'), join(folders.development, 'orca-profile-index.json'), join(folders.development, 'plugins-data', 'local.autocomplete')]
+  const common = { home: '/home/me', platform: 'linux', xdgConfig: '/cfg', exists: (p: string) => present.includes(p), read: () => profileIndex('main'), userDataOfHost: async () => null }
+  assert.equal(await findProfileDatabase({ ...common, hostEntry: '/opt/Orca/resources/app.asar/out/main/plugin-host-entry.js' }), join(folders.packaged, 'profiles', 'main', 'profile-state.db'))
+  assert.equal(await findProfileDatabase({ ...common, hostEntry: '/src/orca/out/main/plugin-host-entry.js' }), join(folders.development, 'profiles', 'main', 'profile-state.db'))
 })
 
-test('findProfileDatabase uses the only Orca that exists and returns null when none does', () => {
-  const read = () => JSON.stringify({ activeProfileId: 'a', profiles: [{ id: 'a' }] })
-  const onlyDev = (path: string) => path.includes('orca-dev')
-  assert.match(findProfileDatabase({ home: '/h', platform: 'linux', xdgConfig: '/c', exists: onlyDev, read, hostEntry: '/opt/resources/app.asar/x' }) ?? '', /orca-dev/)
-  assert.equal(findProfileDatabase({ home: '/h', platform: 'linux', exists: () => false }), null)
+test('a packaged Orca never takes the development folder, even when only that one holds the plugin', async () => {
+  const folders = userDataCandidates('/h', 'linux', '/c')
+  const present = [join(folders.development, 'orca-profile-index.json'), join(folders.development, 'plugins-data', 'local.autocomplete')]
+  const found = await findProfileDatabase({ home: '/h', platform: 'linux', xdgConfig: '/c', exists: (p) => present.includes(p), read: () => profileIndex('x'), hostEntry: '/opt/Orca/resources/app.asar/x', userDataOfHost: async () => null })
+  assert.equal(found, null)
+})
+
+test('an Orca started with its own data folder is found through its command line', async () => {
+  const custom = '/data/portable-orca'
+  const found = await findProfileDatabase({
+    home: '/h', platform: 'linux', xdgConfig: '/c', hostEntry: '/opt/Orca/resources/app.asar/x',
+    exists: (p) => p === join(custom, 'orca-profile-index.json'), read: () => profileIndex('p1'), userDataOfHost: async () => custom
+  })
+  assert.equal(found, join(custom, 'profiles', 'p1', 'profile-state.db'))
+  assert.equal(await findProfileDatabase({ home: '/h', platform: 'linux', exists: () => false, userDataOfHost: async () => custom }), null)
+})
+
+test('parseUserDataDir reads every way the flag is written', () => {
+  assert.equal(parseUserDataDir('Orca.exe --user-data-dir=E:\\tmp\\orca --remote-debugging-port=9'), 'E:\\tmp\\orca')
+  assert.equal(parseUserDataDir('Orca.exe --user-data-dir="C:\\My Data\\orca" --x'), 'C:\\My Data\\orca')
+  assert.equal(parseUserDataDir("orca --user-data-dir '/home/me/o d' --x"), '/home/me/o d')
+  assert.equal(parseUserDataDir('orca --user-data-dir /data/o'), '/data/o')
+  assert.equal(parseUserDataDir('Orca.exe --type=utility'), null)
+})
+
+test('userDataDirOfHost walks up the parents until one carries the flag, and gives up after a few levels', async () => {
+  const tree: Record<number, { commandLine: string; parent: number | null }> = {
+    10: { commandLine: 'Orca.exe --type=utility', parent: 20 },
+    20: { commandLine: 'Orca.exe --user-data-dir=/d/orca', parent: 30 }
+  }
+  assert.equal(await userDataDirOfHost(10, async (pid) => tree[pid] ?? null), '/d/orca')
+  assert.equal(await userDataDirOfHost(99, async () => null), null)
+  const endless = async (pid: number) => ({ commandLine: 'x', parent: pid + 1 })
+  assert.equal(await userDataDirOfHost(1, endless), null)
 })
 
 // --- reader: a real SQLite database laid out like Orca's ---

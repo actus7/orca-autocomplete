@@ -9,7 +9,7 @@ const POLL_MS = 1500
 
 export type WatcherOptions = {
   onChange(settings: ResolvedEditor | null): void
-  find?: () => string | null
+  find?: () => string | null | Promise<string | null>
   read?: (databaseFile: string) => Promise<Documents | null>
   stamp?: (databaseFile: string) => string | null
 }
@@ -72,7 +72,7 @@ export class EditorSettingsWatcher {
     }
     this.reading = true
     try {
-      const file = (this.options.find ?? findProfileDatabase)()
+      const file = await (this.options.find ?? findProfileDatabase)()
       const stamp = file ? (this.options.stamp ?? fileStamp)(file) : null
       if (!force && stamp === this.lastStamp) {
         return
