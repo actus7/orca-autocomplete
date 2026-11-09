@@ -86,29 +86,36 @@ test('activeProfileId accepts only a known profile with a safe id, and falls bac
 
 const profileIndex = (id: string) => JSON.stringify({ activeProfileId: id, profiles: [{ id }] })
 
-test('findProfileDatabase uses the usual folder of this kind of Orca once it holds this plugin’s data', async () => {
-  const folders = userDataCandidates('/home/me', 'linux', '/cfg')
-  const present = [join(folders.packaged, 'orca-profile-index.json'), join(folders.packaged, 'plugins-data', 'actus7.autocomplete'), join(folders.development, 'orca-profile-index.json'), join(folders.development, 'plugins-data', 'local.autocomplete')]
-  const common = { home: '/home/me', platform: 'linux', xdgConfig: '/cfg', exists: (p: string) => present.includes(p), read: () => profileIndex('main'), userDataOfHost: async () => null }
-  assert.equal(await findProfileDatabase({ ...common, hostEntry: '/opt/Orca/resources/app.asar/out/main/plugin-host-entry.js' }), join(folders.packaged, 'profiles', 'main', 'profile-state.db'))
-  assert.equal(await findProfileDatabase({ ...common, hostEntry: '/src/orca/out/main/plugin-host-entry.js' }), join(folders.development, 'profiles', 'main', 'profile-state.db'))
+const host = (entry: string, folderFlag: string | null = null, present: string[] = []) => ({
+  home: '/home/me', platform: 'linux', xdgConfig: '/cfg', hostEntry: entry, parentPid: 1,
+  exists: (p: string) => present.includes(p), read: () => profileIndex('main'), userDataOfHost: async () => folderFlag
+})
+const folders = userDataCandidates('/home/me', 'linux', '/cfg')
+const dbOf = (folder: string) => join(folder, 'profiles', 'main', 'profile-state.db')
+const indexOf = (folder: string) => join(folder, 'orca-profile-index.json')
+
+test('a packaged Orca takes the packaged folder, whether the host runs from app.asar or app.asar.unpacked', async () => {
+  const present = [indexOf(folders.packaged), indexOf(folders.development)]
+  for (const entry of ['/opt/Orca/resources/app.asar/out/main/plugin-host-entry.js', '/opt/Orca/resources/app.asar.unpacked/out/main/plugin-host-entry.js', 'C:/Users/me/AppData/Local/Programs/orca/resources/app.asar.unpacked/out/main/x.js']) {
+    assert.equal(await findProfileDatabase(host(entry, null, present)), dbOf(folders.packaged), entry)
+  }
 })
 
-test('a packaged Orca never takes the development folder, even when only that one holds the plugin', async () => {
-  const folders = userDataCandidates('/h', 'linux', '/c')
-  const present = [join(folders.development, 'orca-profile-index.json'), join(folders.development, 'plugins-data', 'local.autocomplete')]
-  const found = await findProfileDatabase({ home: '/h', platform: 'linux', xdgConfig: '/c', exists: (p) => present.includes(p), read: () => profileIndex('x'), hostEntry: '/opt/Orca/resources/app.asar/x', userDataOfHost: async () => null })
-  assert.equal(found, null)
+test('a development Orca, running from its source tree, takes the development folder', async () => {
+  const present = [indexOf(folders.packaged), indexOf(folders.development)]
+  assert.equal(await findProfileDatabase(host('/src/orca/out/main/plugin-host-entry.js', null, present)), dbOf(folders.development))
 })
 
-test('an Orca started with its own data folder is found through its command line', async () => {
+test('the folder the host was started with wins over the usual one', async () => {
   const custom = '/data/portable-orca'
-  const found = await findProfileDatabase({
-    home: '/h', platform: 'linux', xdgConfig: '/c', hostEntry: '/opt/Orca/resources/app.asar/x',
-    exists: (p) => p === join(custom, 'orca-profile-index.json'), read: () => profileIndex('p1'), userDataOfHost: async () => custom
-  })
-  assert.equal(found, join(custom, 'profiles', 'p1', 'profile-state.db'))
-  assert.equal(await findProfileDatabase({ home: '/h', platform: 'linux', exists: () => false, userDataOfHost: async () => custom }), null)
+  const present = [indexOf(custom), indexOf(folders.packaged)]
+  assert.equal(await findProfileDatabase(host('/opt/Orca/resources/app.asar.unpacked/x.js', custom, present)), dbOf(custom))
+})
+
+test('no profile index in the chosen place means null, never another Orca’s database', async () => {
+  // Only the development folder has a profile; a packaged Orca must not use it.
+  assert.equal(await findProfileDatabase(host('/opt/Orca/resources/app.asar.unpacked/x.js', null, [indexOf(folders.development)])), null)
+  assert.equal(await findProfileDatabase(host('/opt/Orca/resources/app.asar.unpacked/x.js', '/data/none', [])), null)
 })
 
 test('parseUserDataDir reads every way the flag is written', () => {

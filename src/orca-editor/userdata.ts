@@ -51,9 +51,6 @@ function readText(path: string): string | null {
   }
 }
 
-/** Where this plugin's own data lives inside an Orca data folder, whichever way it was installed. */
-const OWN_DATA_FOLDERS = ['actus7.autocomplete', 'local.autocomplete']
-
 export type FindOptions = {
   home?: string
   platform?: Platform
@@ -65,29 +62,39 @@ export type FindOptions = {
   userDataOfHost?: (pid: number) => Promise<string | null>
 }
 
+/** The worker's host does not change while the worker runs, so ask the system about it once. */
+const hostFolderCache = new Map<number, Promise<string | null>>()
+
+function hostFolder(pid: number, ask: (pid: number) => Promise<string | null>, cache: boolean): Promise<string | null> {
+  if (!cache) {
+    return ask(pid)
+  }
+  let known = hostFolderCache.get(pid)
+  if (!known) {
+    known = ask(pid)
+    hostFolderCache.set(pid, known)
+  }
+  return known
+}
+
 /**
  * The database of the active profile of the Orca that is running this worker, or null when that
- * cannot be told for certain (the plugin's own settings then apply). Reading another Orca's settings
- * would be worse than reading none, so a folder counts only when it is provably this Orca's:
- * it holds this plugin's data, or it is the folder this Orca was started with.
+ * cannot be told (the plugin's own settings then apply). Reading another Orca's settings would be
+ * worse than reading none, so it goes by what identifies this Orca:
+ *  1. the folder it was started with (`--user-data-dir` on its own command line), which is exact; else
+ *  2. the usual folder for its kind. A packaged Orca runs its plugin host from `resources/app.asar`
+ *     (unpacked beside it, as `app.asar.unpacked`); a development build runs it from its source tree.
  */
 export async function findProfileDatabase(options: FindOptions = {}): Promise<string | null> {
   const exists = options.exists ?? existsSync
   const { packaged, development } = userDataCandidates(options.home ?? homedir(), options.platform ?? process.platform, options.xdgConfig ?? process.env.XDG_CONFIG_HOME)
   const hasProfiles = (folder: string): boolean => exists(join(folder, 'orca-profile-index.json'))
-  const hasThisPlugin = (folder: string): boolean => OWN_DATA_FOLDERS.some((name) => exists(join(folder, 'plugins-data', name)))
   const entry = (options.hostEntry ?? process.argv[1] ?? '').replaceAll('\\', '/')
-  // A packaged Orca runs its plugin host from inside resources/app.asar; a development build from its source tree.
-  const isPackaged = /\/resources\/app\.asar(\/|$)/.test(entry)
+  const isPackaged = /\/resources\/app\.asar(\.unpacked)?(\/|$)/.test(entry)
 
-  // Why only the matching kind: a development Orca's data folder says nothing about a packaged Orca, and the reverse.
+  const asked = await hostFolder(options.parentPid ?? process.ppid, options.userDataOfHost ?? userDataDirOfHost, options.userDataOfHost === undefined)
   const usual = isPackaged ? packaged : development
-  let folder: string | null = hasProfiles(usual) && hasThisPlugin(usual) ? usual : null
-
-  if (!folder) {
-    const given = await (options.userDataOfHost ?? userDataDirOfHost)(options.parentPid ?? process.ppid)
-    folder = given && hasProfiles(given) ? given : null
-  }
+  const folder = asked && hasProfiles(asked) ? asked : hasProfiles(usual) ? usual : null
   const id = folder ? activeProfileId(folder, options.read) : null
   return folder && id ? join(folder, 'profiles', id, 'profile-state.db') : null
 }
