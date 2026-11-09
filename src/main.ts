@@ -3,6 +3,7 @@ import { complete, type CompletionContext, type Provider, type ProviderFormat } 
 import { explainFailure } from './explain.ts'
 import { pickLocale, translator, type Translate } from './i18n.ts'
 import { LspManager } from './lsp/manager.ts'
+import { EditorSettingsWatcher } from './orca-editor/watcher.ts'
 import { BENCH_BATCH_SIZE, isExpectedAnswer, listModels, median } from './models.ts'
 import { presetFor } from './presets.ts'
 
@@ -144,9 +145,13 @@ function tooltipOf(state: State, config: Config | null, stats: Stats, t: Transla
 // The language servers belong to the running worker; deactivate stops them with it.
 let lspManager: LspManager | null = null
 
+let editorSettings: EditorSettingsWatcher | null = null
+
 export function deactivate(): void {
   lspManager?.dispose()
   lspManager = null
+  editorSettings?.stop()
+  editorSettings = null
 }
 
 const WORKSPACE_ROOTS_CACHE_MS = 5000
@@ -396,6 +401,14 @@ const activate: Activate = (orca) => {
     lsp.detach(docId)
     return {}
   })
+
+  // How Orca's own editor looks right now (font, size, wrap, minimap ...), read from Orca's settings so
+  // the plugin's editor can match it and follow every change. null when they cannot be read.
+  editorSettings = new EditorSettingsWatcher({
+    onChange: (settings) => orca.panels.post('editor.settings.changed', { settings })
+  })
+  const watcher = editorSettings
+  orca.panels.handle('editor.settings', async () => ({ settings: await watcher.start() }))
 
   orca.panels.handle('completion.ask', async (context) => ({ suggestion: await suggest(context) }))
 

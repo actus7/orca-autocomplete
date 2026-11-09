@@ -76,16 +76,23 @@
         "default": true
       },
       {
+        "key": "editorFollowOrca",
+        "title": "Match Orca's editor",
+        "description": "Use the same font, size, wrapping and minimap as Orca's own editor, and follow every change you make to them in Orca. Turn it off to use the four settings below instead.",
+        "type": "boolean",
+        "default": true
+      },
+      {
         "key": "editorFontFamily",
         "title": "Editor font",
-        "description": "Orca does not share its editor font with plugins yet. Type the same font name here to match it; leave it empty for Orca's default.",
+        "description": "Used when Match Orca's editor is off or Orca's settings cannot be read. Empty uses the default.",
         "type": "string",
         "default": ""
       },
       {
         "key": "editorFontSize",
         "title": "Editor font size",
-        "description": "Orca does not share its editor font size with plugins yet. Set the same size here to match it; 0 uses Orca's default (13).",
+        "description": "Used when Match Orca's editor is off or Orca's settings cannot be read. 0 uses the default (13).",
         "type": "integer",
         "default": 0,
         "minimum": 0,
@@ -94,14 +101,14 @@
       {
         "key": "editorWordWrap",
         "title": "Wrap long lines",
-        "description": "Matches Orca's default of wrapping long lines. Turn it off here if you turned it off in Orca.",
+        "description": "Used when Match Orca's editor is off or Orca's settings cannot be read.",
         "type": "boolean",
         "default": true
       },
       {
         "key": "editorMinimap",
         "title": "Show the minimap",
-        "description": "Matches Orca's default of no minimap. Turn it on here if you turned it on in Orca.",
+        "description": "Used when Match Orca's editor is off or Orca's settings cannot be read.",
         "type": "boolean",
         "default": false
       }

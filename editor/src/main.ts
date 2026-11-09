@@ -4,7 +4,7 @@ import * as monaco from 'monaco-editor/esm/vs/editor/edcore.main'
 import { GRAMMARS } from '../languages.mjs'
 import { registerInlineAi } from './ai.ts'
 import { detectLanguage } from './detect.ts'
-import { NATIVE_OPTIONS, PLUGIN_OPTIONS, settingOptions, themeFor } from './editor-options.ts'
+import { NATIVE_OPTIONS, PLUGIN_OPTIONS, settingOptions, themeFor, type OrcaEditor } from './editor-options.ts'
 import { smallestEdit } from './edits.ts'
 import { startLanguageServer } from './lsp.ts'
 import { grammarLoaders, grammarOf } from './languages.generated.ts'
@@ -38,18 +38,25 @@ async function start(): Promise<void> {
   // A language with a service of its own needs it ready, and sometimes a model name, before the model exists.
   const name = await prepareLanguageService(monaco, language, session.value)
   const model = monaco.editor.createModel(session.value, language, name)
-  // Orca's own editor options first, then this plugin's additions, then the person's settings of this plugin.
+  // Orca's own editor options first, then this plugin's additions, then what Orca's settings say (or,
+  // when they cannot be read, the plugin's own settings).
+  let orcaEditor: OrcaEditor | null = (await orca.plugin.request('editor.settings', {}).catch(() => ({ settings: null }))).settings
   const editor = monaco.editor.create(root, {
     model,
     theme: themeFor(isDark()),
     readOnly: session.readOnly,
     ...NATIVE_OPTIONS,
     ...PLUGIN_OPTIONS,
-    ...settingOptions(await orca.settings.get())
+    ...settingOptions(await orca.settings.get(), orcaEditor)
   })
-  // A setting changed (font size, wrap, minimap ...): apply it without reopening the file.
-  orca.settings.onDidChange(() => {
-    void orca.settings.get().then((settings) => editor.updateOptions(settingOptions(settings)))
+  // Font, size, wrap, minimap ... changed in Orca or in this plugin: apply it without reopening the file.
+  const refreshOptions = (): void => {
+    void orca.settings.get().then((settings) => editor.updateOptions(settingOptions(settings, orcaEditor)))
+  }
+  orca.settings.onDidChange(refreshOptions)
+  orca.plugin.on('editor.settings.changed', (change) => {
+    orcaEditor = change.settings
+    refreshOptions()
   })
 
   // The suggestion prompt names the file; a frame never learns the real name, so use its type.

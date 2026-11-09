@@ -6,6 +6,16 @@ declare module 'orca' {
     | { state: 'ready'; server: string; path: string; uri: string; capabilities: Record<string, unknown> }
     | { state: 'none' | 'off' | 'ambiguous' | 'no-file' }
     | { state: 'error'; message: string }
+  /** What Orca's own editor uses, so the plugin's editor can match it. */
+  export type OrcaEditorSettings = {
+    fontFamily: string
+    fontSize: number
+    fontWeight: string
+    lineHeight: number
+    fontLigatures: boolean
+    wordWrap: boolean
+    minimap: boolean
+  }
   export type StatusState = 'on' | 'off' | 'setup' | 'slow' | 'error'
   export type StatusSnapshot = {
     state: StatusState
@@ -43,6 +53,8 @@ declare module 'orca' {
       output: { result: unknown; error?: string }
     }
     'lsp.detach': { input: { docId: string }; output: Record<string, never> }
+    /** How Orca's editor looks now, or null when Orca's settings cannot be read. */
+    'editor.settings': { input: Record<string, never>; output: { settings: OrcaEditorSettings | null } }
     /** One suggestion for the text around the cursor of the plugin's own editor; '' when there is none. */
     'completion.ask': {
       input: { path: string; languageId: string; prefix: string; suffix: string }
@@ -68,6 +80,7 @@ declare module 'orca' {
   // oxlint-disable-next-line typescript/consistent-type-definitions -- declaration merging needs an interface
   interface PluginPanelEvents {
     'status.changed': StatusSnapshot
+    'editor.settings.changed': { settings: OrcaEditorSettings | null }
     'lsp.diagnostics': { docId: string; diagnostics: unknown[] }
     'lsp.status': { docId: string; status: LspStatus }
   }

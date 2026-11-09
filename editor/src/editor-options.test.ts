@@ -6,6 +6,8 @@ test('with nothing set the editor matches Orca: size 13, wrapped, no minimap, mo
   assert.deepEqual(settingOptions({}), {
     fontFamily: 'monospace',
     fontSize: FONT_SIZE_DEFAULT,
+    fontWeight: 'normal',
+    fontLigatures: false,
     lineHeight: 0,
     wordWrap: 'on',
     minimap: { enabled: false }
@@ -41,4 +43,18 @@ test('the copied native options keep what makes the editor look like Orca’s', 
   assert.equal(NATIVE_OPTIONS.cursorSmoothCaretAnimation, 'off')
   assert.equal(NATIVE_OPTIONS.renderLineHighlight, 'line')
   assert.equal(NATIVE_OPTIONS.scrollBeyondLastLine, false)
+})
+
+const orcaValues = { fontFamily: 'Cascadia Mono', fontSize: 14, fontWeight: 'normal', lineHeight: 0, fontLigatures: true, wordWrap: false, minimap: true }
+
+test('Orca’s own values win by default, so both editors look alike', () => {
+  assert.deepEqual(settingOptions({ editorFontSize: 20 }, orcaValues), {
+    fontFamily: 'Cascadia Mono', fontSize: 14, fontWeight: 'normal', lineHeight: 0, fontLigatures: true,
+    wordWrap: 'off', minimap: { enabled: true }
+  })
+})
+
+test('the plugin’s settings apply when following Orca is off or Orca’s values are unavailable', () => {
+  assert.equal(settingOptions({ editorFollowOrca: false, editorFontSize: 20 }, orcaValues).fontSize, 20)
+  assert.equal(settingOptions({ editorFontSize: 20 }, null).fontSize, 20)
 })

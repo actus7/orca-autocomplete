@@ -11,7 +11,20 @@ export const FONT_SIZE_MAX = 24
 /** The size Orca uses when none is set. */
 export const FONT_SIZE_DEFAULT = 13
 
+/** What Orca's own editor uses, read from Orca's settings by the plugin's worker. */
+export type OrcaEditor = {
+  fontFamily: string
+  fontSize: number
+  fontWeight: string
+  lineHeight: number
+  fontLigatures: boolean
+  wordWrap: boolean
+  minimap: boolean
+}
+
 export type EditorSettings = {
+  /** On by default: take the values from Orca. Off, or when Orca's cannot be read, the ones below apply. */
+  editorFollowOrca?: unknown
   /** Empty follows Orca's default, which is the plain `monospace` family (Monaco adds its fallbacks). */
   editorFontFamily?: unknown
   /** 0 or empty follows Orca's default. */
@@ -34,13 +47,29 @@ export function resolveFontFamily(value: unknown): string {
   return typeof value === 'string' && value.trim() ? value.trim() : 'monospace'
 }
 
-/** The options that change with the person's settings; applied again whenever a setting changes. */
-export function settingOptions(settings: EditorSettings) {
+/**
+ * The options that change with the person's settings; applied again whenever one changes. Orca's own
+ * values win, so the two editors side by side look the same; the plugin's settings are the fallback.
+ */
+export function settingOptions(settings: EditorSettings, orca: OrcaEditor | null = null) {
+  if (orca && settings.editorFollowOrca !== false) {
+    return {
+      fontFamily: orca.fontFamily,
+      fontSize: orca.fontSize,
+      fontWeight: orca.fontWeight,
+      lineHeight: orca.lineHeight,
+      fontLigatures: orca.fontLigatures,
+      wordWrap: orca.wordWrap ? ('on' as const) : ('off' as const),
+      minimap: { enabled: orca.minimap }
+    }
+  }
   return {
     fontFamily: resolveFontFamily(settings.editorFontFamily),
     fontSize: resolveFontSize(settings.editorFontSize),
+    fontWeight: 'normal',
     // Why 0: Monaco's automatic line spacing, as Orca does when no line height is set.
     lineHeight: 0,
+    fontLigatures: false,
     wordWrap: settings.editorWordWrap === false ? ('off' as const) : ('on' as const),
     minimap: { enabled: settings.editorMinimap === true }
   }

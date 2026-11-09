@@ -65,7 +65,12 @@ const CLIENT_CAPABILITIES = {
 function launchDefault(spec: ServerSpec, executable: string, cwd: string): ChildProcessWithoutNullStreams {
   // Why a shell for .cmd and .bat: on Windows, npm installs servers as such shims, which cannot be started directly.
   const shim = /\.(cmd|bat)$/i.test(executable)
-  return spawn(shim ? `"${executable}"` : executable, spec.args, { cwd, shell: shim, windowsHide: true, env: process.env })
+  if (shim) {
+    // Why one string: Node warns (DEP0190) when arguments are passed beside shell:true. They are fixed
+    // flags of the server, never user input, so joining them is safe.
+    return spawn(`"${executable}" ${spec.args.join(' ')}`, { cwd, shell: true, windowsHide: true, env: process.env })
+  }
+  return spawn(executable, spec.args, { cwd, windowsHide: true, env: process.env })
 }
 
 class Server {
