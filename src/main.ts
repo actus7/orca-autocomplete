@@ -7,6 +7,8 @@ import { presetFor } from './presets.ts'
 
 const SECRET_KEY = 'apiKey'
 const LOCALE_KEY = 'locale'
+// The address the saved key belongs to: a key is never used for any other provider.
+const KEY_ADDRESS = 'keyAddress'
 const STATUS_ITEM = 'status'
 // Why: Orca drops a hook still running after 2 s; stop the request just before that.
 const REQUEST_TIMEOUT_MS = 1800
@@ -28,6 +30,14 @@ type State = 'on' | 'off' | 'setup' | 'error' | 'slow'
 
 const TONES = { on: 'success', off: 'neutral', setup: 'warning', error: 'danger', slow: 'warning' } as const
 
+/** The saved key, but only for the provider it was saved for. */
+async function savedKey(orca: OrcaWorkerApi, baseUrl: string): Promise<string> {
+  const key = (await orca.secrets.get(SECRET_KEY)) ?? ''
+  const pinned = await orca.storage.get(KEY_ADDRESS)
+  const foreign = typeof pinned === 'string' && pinned !== '' && !sameAddress(pinned, baseUrl)
+  return key && !foreign ? key : ''
+}
+
 async function readConfig(orca: OrcaWorkerApi): Promise<Config | null> {
   const settings = await orca.settings.get()
   const baseUrl = String(settings.baseUrl ?? '').trim()
@@ -42,7 +52,7 @@ async function readConfig(orca: OrcaWorkerApi): Promise<Config | null> {
       format,
       baseUrl,
       model,
-      apiKey: (await orca.secrets.get(SECRET_KEY)) ?? '',
+      apiKey: await savedKey(orca, baseUrl),
       maxTokens: Math.max(1, Math.floor(Number(settings.maxTokens) || 96))
     }
   }
@@ -54,6 +64,17 @@ function hostOf(url: string): string {
   } catch {
     return ''
   }
+}
+
+function sameAddress(a: string, b: string): boolean {
+  const normalize = (url: string): string => {
+    try {
+      return new URL(url.trim()).href.replace(/\/+$/, '').toLowerCase()
+    } catch {
+      return ''
+    }
+  }
+  return normalize(a) !== '' && normalize(a) === normalize(b)
 }
 
 function keyMissing(config: Config): boolean {
@@ -129,7 +150,7 @@ const activate: Activate = (orca) => {
       reason: stats.lastError,
       host: config ? new URL(config.provider.baseUrl).host : '',
       model: config?.provider.model ?? '',
-      hasKey: Boolean(await orca.secrets.get(SECRET_KEY))
+      hasKey: Boolean(await savedKey(orca, String((await orca.settings.get('baseUrl')) ?? '')))
     }
   }
 
@@ -154,6 +175,25 @@ const activate: Activate = (orca) => {
       orca.log(`status bar update failed: ${error instanceof Error ? error.message : String(error)}`)
     }
     orca.panels.post('status.changed', await snapshot())
+  }
+
+  /**
+   * The key to send when listing models. The typed key may go anywhere the person points it, but
+   * the saved one only goes back to the provider it was saved for, and servers that need no key
+   * never get one.
+   */
+  async function keyForListing(format: ProviderFormat, url: string, typed: string): Promise<string> {
+    if (presetFor(format, url).keyKind === 'none') {
+      return ''
+    }
+    if (typed) {
+      return typed
+    }
+    const saved = await orca.settings.get()
+    const savedFormat: ProviderFormat = saved.format === 'anthropic' ? 'anthropic' : 'openai'
+    const sameProvider =
+      savedFormat === format && sameAddress(String(saved.baseUrl ?? ''), url)
+    return sameProvider ? await savedKey(orca, url) : ''
   }
 
   async function runTest(): Promise<{ ok: boolean; message: string; ms: number | null }> {
@@ -247,8 +287,10 @@ const activate: Activate = (orca) => {
     const trimmed = key.trim()
     if (trimmed) {
       await orca.secrets.set(SECRET_KEY, trimmed)
+      await orca.storage.set(KEY_ADDRESS, String((await orca.settings.get('baseUrl')) ?? ''))
     } else {
       await orca.secrets.delete(SECRET_KEY)
+      await orca.storage.delete(KEY_ADDRESS)
     }
     cache.clear()
     stats.lastError = null
@@ -271,11 +313,11 @@ const activate: Activate = (orca) => {
     if (!/^https?:\/\//i.test(url) || !hostOf(url)) {
       return { ok: false, models: [], message: t('test.needsSetup') }
     }
-    // Why: the draft key lets people pick a model before saving; it is used once and not stored.
-    const apiKey = key.trim() || (await orca.secrets.get(SECRET_KEY)) || ''
+    const asked: ProviderFormat = format === 'anthropic' ? 'anthropic' : 'openai'
+    const apiKey = await keyForListing(asked, url, key.trim())
     try {
       const models = await listModels(
-        { format: format === 'anthropic' ? 'anthropic' : 'openai', baseUrl: url, apiKey },
+        { format: asked, baseUrl: url, apiKey },
         AbortSignal.timeout(MODELS_TIMEOUT_MS)
       )
       return { ok: true, models, message: '' }
@@ -306,9 +348,16 @@ const activate: Activate = (orca) => {
       : t('cmd.testFail', { reason: result.message })
   })
 
+  // Why: a key saved before keys were pinned belongs to the provider configured now.
+  async function pinExistingKey(): Promise<void> {
+    if ((await orca.secrets.get(SECRET_KEY)) && (await orca.storage.get(KEY_ADDRESS)) === null) {
+      await orca.storage.set(KEY_ADDRESS, String((await orca.settings.get('baseUrl')) ?? ''))
+    }
+  }
+
   orca.settings.onDidChange(() => void refreshStatus())
   orca.storage.onDidChange(() => void refreshStatus())
-  void refreshStatus()
+  void pinExistingKey().then(() => refreshStatus())
 }
 
 export default activate

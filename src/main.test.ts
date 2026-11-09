@@ -29,6 +29,7 @@ async function mountWorker(
   locale = 'en-US'
 ) {
   const settings = { ...initial }
+  const store = new Map<string, unknown>([['locale', locale]])
   const hooks = new Map<string, (event: Json, next: (e: Json) => unknown) => unknown>()
   const handlers = new Map<string, (input: Json) => Promise<unknown>>()
   const commands = new Map<string, () => Promise<unknown>>()
@@ -55,7 +56,12 @@ async function mountWorker(
       set: async (key: string, value: unknown) => void (settings[key] = value),
       onDidChange: () => disposable
     },
-    storage: { get: async () => locale, onDidChange: () => disposable },
+    storage: {
+      get: async (key: string) => store.get(key) ?? null,
+      set: async (key: string, value: unknown) => void store.set(key, value),
+      delete: async (key: string) => void store.delete(key),
+      onDidChange: () => disposable
+    },
     secrets: {
       get: async (key: string) => secrets[key] ?? null,
       set: async (key: string, value: string) => void (secrets[key] = value),
@@ -68,6 +74,7 @@ async function mountWorker(
     logs,
     secrets,
     settings,
+    store,
     posts,
     lastStatus: async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -325,4 +332,64 @@ test('models.list explains a rejected key and refuses an address that is not htt
   } finally {
     restore()
   }
+})
+
+test('models.list never sends the saved key to a different address than the one it was saved for', async () => {
+  const { seen, restore } = stubModelsFetch()
+  try {
+    const worker = await mountWorker(keyedSettings, { apiKey: 'saved' })
+    await worker.request('models.list', { format: 'openai', baseUrl: 'https://openrouter.ai/api/v1', key: '' })
+    await worker.request('models.list', { format: 'anthropic', baseUrl: 'https://api.openai.com/v1', key: '' })
+    assert.equal(seen.length, 2)
+    for (const call of seen) {
+      assert.equal('authorization' in call.headers, false)
+      assert.equal('x-api-key' in call.headers, false)
+    }
+  } finally {
+    restore()
+  }
+})
+
+test('models.list still uses the saved key for the saved address, however it is written', async () => {
+  const { seen, restore } = stubModelsFetch()
+  try {
+    const worker = await mountWorker(keyedSettings, { apiKey: 'saved' })
+    await worker.request('models.list', { format: 'openai', baseUrl: ' HTTPS://API.openai.com/v1/ ', key: '' })
+    assert.equal(seen[0].headers.authorization, 'Bearer saved')
+  } finally {
+    restore()
+  }
+})
+
+test('models.list sends no key at all to a server that needs none, even a typed one', async () => {
+  const { seen, restore } = stubModelsFetch()
+  try {
+    const worker = await mountWorker(keyedSettings, { apiKey: 'saved' })
+    await worker.request('models.list', { format: 'openai', baseUrl: 'http://localhost:11434/v1', key: 'typed' })
+    assert.equal('authorization' in seen[0].headers, false)
+  } finally {
+    restore()
+  }
+})
+
+test('a key saved for one provider is not used for another, and not even counted as saved', async () => {
+  const restore = stubFetch(200, { choices: [{ message: { content: '42' } }] })
+  try {
+    const worker = await mountWorker(keyedSettings)
+    await worker.request('key.set', { key: 'sk-openai' })
+    assert.equal(((await worker.request('status.get')) as Json).hasKey, true)
+    worker.settings.baseUrl = 'https://openrouter.ai/api/v1'
+    assert.equal(((await worker.request('status.get')) as Json).hasKey, false)
+    assert.equal(((await worker.request('status.get')) as Json).state, 'setup')
+    assert.deepEqual(await worker.fire(asked), asked)
+  } finally {
+    restore()
+  }
+})
+
+test('a key saved before keys were pinned is adopted by the provider configured now', async () => {
+  const worker = await mountWorker(keyedSettings, { apiKey: 'old' })
+  await worker.lastStatus()
+  assert.equal(worker.store.get('keyAddress'), 'https://api.openai.com/v1')
+  assert.equal(((await worker.request('status.get')) as Json).hasKey, true)
 })

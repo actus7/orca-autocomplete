@@ -52,7 +52,7 @@ The command palette also has **Autocomplete: Turn on or off** and **Autocomplete
 
 ## Privacy
 
-When you pause typing, the text around your cursor (up to about 6,000 characters before it and 2,000 after, plus the file name and language) is sent to the provider **you** chose, and nowhere else. Your API key is stored encrypted by Orca and only sent to that provider. The plugin has no telemetry and no analytics. Turn it off any time from the panel or the status bar.
+When you pause typing, the text around your cursor (up to about 6,000 characters before it and 2,000 after, plus the file name and language) is sent to the provider **you** chose, and nowhere else. Your API key is stored encrypted by Orca and is tied to the provider it was saved for: if you switch providers, the panel asks for a new key, and the old one is never sent to the new one. The plugin has no telemetry and no analytics. Turn it off any time from the panel or the status bar.
 
 ## Troubleshooting
 
