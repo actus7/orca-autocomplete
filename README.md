@@ -119,6 +119,6 @@ To match Orca's editor, the worker opens Orca's profile database **read-only** a
 
 The listing images are rendered from `assets/templates` with `assets/build.mjs` (needs Playwright; see the header of that file).
 
-`bench/` measures a provider and model on this repository's own code (cuts a line, asks for the rest, compares with what was there), so a change can be judged by numbers. It sends pieces of the files to the provider you name; a remote one needs `--yes`.
+`bench/` measures a provider and model on this repository's own code (cuts a line inside code, asks for the rest, compares with what was there), so a change can be judged by numbers. It sends pieces of the files to the provider you name; a remote one needs `--yes`. `node bench/compare.mjs a.json b.json` compares two runs made with the same `--seed` and `--samples` place by place and says whether a difference is more than chance. `--context graph` adds an experiment: the declarations from other files that the code nearby uses, read from a [CodeGraph](https://github.com/colbymchenry/codegraph) index (`codegraph init` first; the `.codegraph/` folder is not committed).
 
 MIT licensed.

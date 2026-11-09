@@ -53,10 +53,30 @@ function cutColumn(line, random) {
       column -= 1
     }
   }
-  return column > 0 && line.slice(column).trim() !== '' ? column : -1
+  return column > 0 && line.slice(column).trim() !== '' && isCodePlace(line, column) ? column : -1
 }
 
 const CUT_TRIES = 10
+const BACKSLASH = String.fromCharCode(92)
+const COMMENT_LINE = /^\s*(\/\/|\/\*|\*)/
+// What code looks like: a place whose rest of the line has none of these is prose, a name or a literal.
+const CODE_PUNCTUATION = /[(){}[\].=;:<>+*/|&?!,]/
+
+/** Whether cutting `line` at `column` leaves code to predict: not inside a comment or a string, and with code after it. */
+export function isCodePlace(line, column) {
+  if (COMMENT_LINE.test(line)) {
+    return false
+  }
+  const before = line.slice(0, column)
+  // An odd number of quotes of one kind before the cut means the cursor is inside a string.
+  for (const quote of ["'", '"', '`']) {
+    const unescaped = before.split(quote).length - 1 - (before.split(BACKSLASH + quote).length - 1)
+    if (unescaped % 2 === 1) {
+      return false
+    }
+  }
+  return CODE_PUNCTUATION.test(line.slice(column))
+}
 
 /**
  * `count` places to complete: the code before the cursor, the rest of that line (what a good suggestion
@@ -91,4 +111,70 @@ export function score(suggestion, expected) {
   const got = suggestion.split('\n')[0].trimEnd()
   const want = expected.trimEnd()
   return { exact: got === want, similarity: similarity(got, want), empty: suggestion.trim() === '' }
+}
+
+/** Two-sided exact sign test: how likely a split of `wins` and `losses` this lopsided is if neither side is better. */
+export function signTestP(wins, losses) {
+  const n = wins + losses
+  if (n === 0) {
+    return 1
+  }
+  const k = Math.min(wins, losses)
+  let coefficient = 1
+  let tail = 0
+  for (let i = 0; i <= k; i += 1) {
+    tail += coefficient
+    coefficient = (coefficient * (n - i)) / (i + 1)
+  }
+  return Math.min(1, (2 * tail) / 2 ** n)
+}
+
+// A difference in similarity smaller than this is noise, not a better or a worse suggestion.
+const TIE = 0.05
+
+/**
+ * Compares two runs of the same places (same seed and samples), place by place, over the places both
+ * answered. `b` is the run under test, so a "win" is a place where it did better than `a`. With `skipPolluted`,
+ * places where either answer carried a gateway's own text instead of code are left out too, since those
+ * answers say nothing about the model or the context.
+ */
+export function compareRuns(a, b, { skipPolluted = false } = {}) {
+  const both = a.results
+    .map((x, index) => [x, b.results[index]])
+    .filter(([x, y]) => y && !x.error && !y.error && !(skipPolluted && (x.polluted || y.polluted)))
+  let wins = 0
+  let losses = 0
+  let gained = 0
+  let lost = 0
+  for (const [x, y] of both) {
+    const difference = y.similarity - x.similarity
+    wins += difference > TIE ? 1 : 0
+    losses += difference < -TIE ? 1 : 0
+    gained += !x.exact && y.exact ? 1 : 0
+    lost += x.exact && !y.exact ? 1 : 0
+  }
+  const mean = (list, pick) => (list.length ? list.reduce((sum, item) => sum + pick(item), 0) / list.length : 0)
+  return {
+    compared: both.length,
+    similarityA: mean(both, ([x]) => x.similarity),
+    similarityB: mean(both, ([, y]) => y.similarity),
+    exactA: both.filter(([x]) => x.exact).length,
+    exactB: both.filter(([, y]) => y.exact).length,
+    wins,
+    losses,
+    ties: both.length - wins - losses,
+    exactGained: gained,
+    exactLost: lost,
+    pSimilarity: signTestP(wins, losses),
+    pExact: signTestP(gained, lost)
+  }
+}
+
+// Text that a gateway's own instructions can leave in an answer: tool-call markup, and the "skipped: ... add
+// when ..." notes of a terse-coding persona. None of it is code, so an answer holding it was not the model's work on the task.
+const POLLUTION = /<tool_call>|<function=|<\/?parameter|\bponytail\b|\bskipped:/i
+
+/** Whether an answer carries what a gateway injected instead of code. */
+export function looksPolluted(text) {
+  return POLLUTION.test(text)
 }

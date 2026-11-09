@@ -7,6 +7,7 @@ import {
   complete,
   extractText,
   isProse,
+  looksInjected,
   parseFormat,
   type CompletionContext,
   type FetchLike,
@@ -297,4 +298,45 @@ test('nothing is sent when the cursor sits inside a token, though neither side h
   const input = { ...ctx, prefix: `const key = "sk-${'a'.repeat(12)}`, suffix: `${'a'.repeat(12)}";` }
   assert.equal(await complete(openai, input, AbortSignal.timeout(1000), okFetch(counter)), '')
   assert.equal(counter.calls, 0)
+})
+
+test('declarations from other files are given to a chat model before the file, and only when there are some', () => {
+  const related = 'function add(a: number, b: number): number  // src/math.ts'
+  const withRelated = bodyOf(buildRequest(openai, { ...ctx, related })) as { messages: { content: string }[] }
+  const user = withRelated.messages[1].content
+  assert.ok(user.includes(related))
+  assert.ok(user.indexOf(related) < user.indexOf('File: src/a.ts'), 'before the file')
+  assert.ok(user.indexOf('File: src/a.ts') < user.indexOf('<CURSOR>'))
+  const without = bodyOf(buildRequest(openai, ctx)) as { messages: { content: string }[] }
+  assert.ok(!without.messages[1].content.includes('Declarations from other files'))
+})
+
+test('the declarations given to the model are capped', () => {
+  const long = 'x'.repeat(10_000)
+  const sent = (bodyOf(buildRequest(openai, { ...ctx, related: long })) as { messages: { content: string }[] }).messages[1].content
+  assert.ok(sent.length < 3500, `${sent.length} characters`)
+})
+
+test('nothing is sent when the declarations from other files hold a secret', async () => {
+  const counter = { calls: 0 }
+  const related = `const key = "sk-${'a'.repeat(30)}"  // src/config.ts`
+  assert.equal(await complete(openai, { ...ctx, related }, AbortSignal.timeout(1000), okFetch(counter)), '')
+  assert.equal(counter.calls, 0)
+})
+
+test('an answer made of tool-call markup is dropped instead of being shown as a suggestion', async () => {
+  const answering = (content: string): FetchLike => async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ choices: [{ message: { content } }] }),
+    text: async () => ''
+  })
+  const signal = AbortSignal.timeout(1000)
+  for (const markup of ['<tool_call>\n<function=Read>\n<parameter=file_path>\na.ts\n</parameter>', 'x = 1 <function=Read> y', 'ok </tool_call>']) {
+    assert.equal(await complete(openai, ctx, signal, answering(markup)), '', markup)
+    assert.equal(looksInjected(markup), true)
+  }
+  // Ordinary code, even code about functions and parameters, is kept.
+  assert.equal(await complete(openai, ctx, signal, answering('parameters.function = a < b')), 'parameters.function = a < b')
+  assert.equal(looksInjected('const f = <T>(x: T) => x'), false)
 })

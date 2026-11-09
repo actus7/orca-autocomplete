@@ -4,15 +4,19 @@
 //
 //   node bench/run.mjs --base-url http://localhost:11434/v1 --model qwen2.5-coder:1.5b --yes
 //
-// Options: --format openai|anthropic (openai)  --key-env NAME (env var holding the key)  --samples N (40)
+// Options: --format openai|anthropic|ollama|mistral-fim (openai)  --key-env NAME (env var holding the key)  --samples N (40)
 //          --seed N (1)  --timeout MS (6000)  --dir PATH (repeat; default src and editor/src)  --out FILE
+//          --context graph  also tell the model what the code nearby calls in other files, read from the CodeGraph
+//                           index of this repository (run `codegraph init` first; see bench/context.mjs)
+// Compare two runs that used the same --seed and --samples with: node bench/compare.mjs a.json b.json
 // It sends pieces of the files it reads to the provider you name, so a remote one needs --yes.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { complete } from '../src/complete.ts'
 import { percentile } from '../src/metrics.ts'
-import { pickCuts, score } from './lib.mjs'
+import { openGraph, relatedFor } from './context.mjs'
+import { looksPolluted, pickCuts, score } from './lib.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const args = process.argv.slice(2)
@@ -47,20 +51,22 @@ function collect(dir) {
     if (entry.isDirectory()) {
       return entry.name === 'dist' || entry.name === 'node_modules' ? [] : collect(path)
     }
-    return /\.(ts|tsx|mjs)$/.test(entry.name) && !/\.(test|generated)\./.test(entry.name) ? [{ path: relative(root, path), text: readFileSync(path, 'utf8') }] : []
+    return /\.(ts|tsx|mjs)$/.test(entry.name) && !/\.(test|generated)\./.test(entry.name) ? [{ path: relative(root, path).split(sep).join('/'), text: readFileSync(path, 'utf8') }] : []
   })
 }
 
 const files = (dirs.length ? dirs : ['src', 'editor/src']).flatMap((dir) => collect(join(root, dir)))
 const cuts = pickCuts(files, samples, Number(option('seed', '1')))
+const graph = option('context', 'none') === 'graph' ? openGraph(option('db', join(root, '.codegraph', 'codegraph.db'))) : null
 const results = []
 for (const cut of cuts) {
+  const related = graph ? relatedFor(graph, cut) : ''
   const startedAt = Date.now()
   try {
-    const suggestion = await complete(provider, { path: cut.path, languageId: 'typescript', prefix: cut.prefix, suffix: cut.suffix }, AbortSignal.timeout(timeoutMs))
-    results.push({ ...score(suggestion, cut.expected), ms: Date.now() - startedAt })
+    const suggestion = await complete(provider, { path: cut.path, languageId: 'typescript', prefix: cut.prefix, suffix: cut.suffix, related }, AbortSignal.timeout(timeoutMs))
+    results.push({ ...score(suggestion, cut.expected), polluted: looksPolluted(suggestion), ms: Date.now() - startedAt, relatedChars: related.length })
   } catch (error) {
-    results.push({ error: error instanceof Error ? error.name : String(error), ms: Date.now() - startedAt })
+    results.push({ error: error instanceof Error ? error.name : String(error), ms: Date.now() - startedAt, relatedChars: related.length })
   }
 }
 
@@ -72,8 +78,11 @@ const summary = {
   samples: results.length,
   errors: results.length - answered.length,
   empty: answered.filter((r) => r.empty).length,
+  polluted: answered.filter((r) => r.polluted).length,
   exact: `${Math.round((100 * answered.filter((r) => r.exact).length) / Math.max(1, results.length))}%`,
   similarity: mean(answered.map((r) => r.similarity)).toFixed(2),
+  context: graph ? 'graph' : 'none',
+  withContext: results.filter((r) => r.relatedChars > 0).length,
   p50: percentile(results.map((r) => r.ms), 50),
   p95: percentile(results.map((r) => r.ms), 95)
 }

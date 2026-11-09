@@ -31,7 +31,12 @@ export type CompletionContext = {
   languageId?: string
   prefix: string
   suffix: string
+  /** Declarations from other files the code near the cursor uses, one per line, to help the model write calls that fit. */
+  related?: string
 }
+
+// Why a cap: this is a hint, and every character of it is sent to the provider and waited for.
+const RELATED_MAX_CHARS = 2500
 
 const CURSOR = '<CURSOR>'
 const PREFIX_CHARS = 6000
@@ -71,7 +76,10 @@ const PROSE_MAX_TOKENS = 48
 export function buildUserPrompt(ctx: CompletionContext): string {
   const language = ctx.languageId ? ` (${ctx.languageId})` : ''
   const { prefix, suffix } = windowOf(ctx)
-  return `File: ${ctx.path}${language}\n\n${prefix}${CURSOR}${suffix}`
+  const related = ctx.related
+    ? `Declarations from other files the code below uses, for reference only (never repeat them):\n${ctx.related.slice(0, RELATED_MAX_CHARS)}\n\n`
+    : ''
+  return `${related}File: ${ctx.path}${language}\n\n${prefix}${CURSOR}${suffix}`
 }
 
 function joinUrl(base: string, path: string): string {
@@ -170,6 +178,15 @@ export function extractText(format: ProviderFormat, json: unknown): string {
   return typeof message?.content === 'string' ? message.content : ''
 }
 
+// Some gateways add instructions of their own to every request, and a model that follows them answers with tool-call
+// markup instead of code. That is never code, and shown as a suggestion it would be gray text in the person's file.
+const TOOL_MARKUP = /<tool_call>|<function=|<parameter=|<\/(?:tool_call|function|parameter)>/
+
+/** Whether an answer is tool-call markup that a gateway's instructions drew out of the model, not code. */
+export function looksInjected(answer: string): boolean {
+  return TOOL_MARKUP.test(answer)
+}
+
 /** Keeps the first fenced block when a model wraps its answer, and drops chatter after it. */
 export function cleanSuggestion(raw: string): string {
   const fenced = /^\s*```[^\n]*\n([\s\S]*?)\n?```[\s\S]*$/.exec(raw)
@@ -245,7 +262,8 @@ export async function complete(
   // Why here: every request to a provider goes through this function.
   const before = ctx.prefix.slice(-(PREFIX_CHARS + SECRET_MARGIN_CHARS))
   const after = ctx.suffix.slice(0, SUFFIX_CHARS + SECRET_MARGIN_CHARS)
-  if (findSecretAround(before, after, ctx.path)) {
+  // The related declarations are sent too, so they are checked like the rest.
+  if (findSecretAround(before, after, `${ctx.path}\n${ctx.related ?? ''}`)) {
     return ''
   }
   const { url, init } = buildRequest(provider, ctx)
@@ -255,6 +273,9 @@ export async function complete(
     throw new ProviderHttpError(response.status)
   }
   const raw = extractText(provider.format, await response.json())
+  if (looksInjected(raw)) {
+    return ''
+  }
   // Why not for prose: a fenced block is a legitimate thing to write in a document, not wrapping to strip.
   const cleaned = isProse(ctx.languageId) ? raw : cleanSuggestion(raw)
   return trimSuffixOverlap(trimPrefixEcho(cleaned, ctx.prefix), ctx.suffix)
