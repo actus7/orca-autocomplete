@@ -12,6 +12,8 @@
       "node"
     ],
     "skipLibCheck": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "typeRoots": [
       "./.orca/types",
       "./node_modules/@types"

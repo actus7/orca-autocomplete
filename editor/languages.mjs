@@ -32,7 +32,7 @@ export const LANGUAGES = [
 ]
 
 /** @type {Language[]} Languages the generic editor can show; it picks one by looking at the content. */
-export const GENERIC_LANGUAGES = [
+const GENERIC_LANGUAGES = [
   { id: 'scss', title: 'CSS', dir: 'scss', extensions: ['.css', '.scss'] },
   { id: 'less', title: 'Less', dir: 'less', extensions: ['.less'] },
   { id: 'xml', title: 'XML', dir: 'xml', extensions: ['.xml'] },

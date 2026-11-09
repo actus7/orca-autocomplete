@@ -75,7 +75,7 @@ export type Speeds = Readonly<Record<string, Speed>>
 // Why: each test is a real request to the provider; a cap keeps a free plan from being burnt on 400 models.
 export const BENCH_MAX_MODELS = 12
 export const BENCH_BATCH_SIZE = 4
-export const RECOMMENDED_COUNT = 3
+const RECOMMENDED_COUNT = 3
 // Up to this many models the list is just a picker: no search box, no separate "type the name" tab.
 export const SHORT_LIST_MAX = 15
 

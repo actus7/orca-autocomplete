@@ -22,7 +22,7 @@ function run(command: string, args: string[]): Promise<string | null> {
 }
 
 /** Command line and parent of a process, by the platform's own tools. */
-export const lookupProcess: ProcessLookup = async (pid) => {
+const lookupProcess: ProcessLookup = async (pid) => {
   if (!Number.isInteger(pid) || pid <= 0) {
     return null
   }

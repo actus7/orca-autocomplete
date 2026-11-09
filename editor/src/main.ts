@@ -65,7 +65,7 @@ async function start(): Promise<void> {
 
   // A language server installed on this computer, when there is one and the file is in a workspace.
   const grammar = GRAMMARS.find((entry) => entry.id === language)
-  void startLanguageServer(monaco, model, editor, {
+  void startLanguageServer(monaco, model, {
     language,
     extensions: [...(grammar?.extensions ?? []), ...(grammar?.filenames ?? [])],
     onServed: () => {

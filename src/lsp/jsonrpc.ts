@@ -12,7 +12,7 @@ type Pending = { resolve(value: unknown): void; reject(error: Error): void }
 const HEADER_END = Buffer.from('\r\n\r\n')
 const LENGTH_HEADER = /content-length:\s*(\d+)/i
 
-export class RpcError extends Error {
+class RpcError extends Error {
   readonly code: number
 
   constructor(code: number, message: string) {

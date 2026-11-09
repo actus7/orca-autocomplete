@@ -19,7 +19,7 @@ import {
 import { showServerBadge } from './lsp-badge.ts'
 import { sameUri } from '../../src/lsp/uri.ts'
 
-type Capabilities = Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any -- the server's own JSON
+type Capabilities = Record<string, any> // the server's own JSON
 const SYNC_DELAY_MS = 150
 // Why a number: the same constant LSP uses for "typed this trigger character".
 const LSP_TRIGGER_CHARACTER = 2
@@ -34,7 +34,6 @@ export type LanguageServerOptions = {
 export async function startLanguageServer(
   monaco: typeof Monaco,
   model: Monaco.editor.ITextModel,
-  editor: Monaco.editor.IStandaloneCodeEditor,
   options: LanguageServerOptions
 ): Promise<void> {
   const docId = crypto.randomUUID()
@@ -95,7 +94,7 @@ export async function startLanguageServer(
   })
 
   // A request waits for the newest text first, so the answer is about what is on screen.
-  async function ask(method: string, params: Record<string, unknown>): Promise<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
+  async function ask(method: string, params: Record<string, unknown>): Promise<any> {
     await flush()
     try {
       return (await orca.plugin.request('lsp.request', { docId, method, params })).result
@@ -126,7 +125,7 @@ export async function startLanguageServer(
             ...(context.triggerCharacter ? { triggerCharacter: context.triggerCharacter } : {})
           }
         })
-        const items: any[] = Array.isArray(result) ? result : (result?.items ?? []) // eslint-disable-line @typescript-eslint/no-explicit-any
+        const items: any[] = Array.isArray(result) ? result : (result?.items ?? [])
         const word = m.getWordUntilPosition(position)
         const fallback = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn)
         return {
@@ -182,10 +181,10 @@ export async function startLanguageServer(
           value: {
             activeSignature: result.activeSignature ?? 0,
             activeParameter: result.activeParameter ?? 0,
-            signatures: result.signatures.map((signature: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+            signatures: result.signatures.map((signature: any) => ({
               label: signature.label,
               documentation: markdown(signature.documentation),
-              parameters: (signature.parameters ?? []).map((parameter: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+              parameters: (signature.parameters ?? []).map((parameter: any) => ({
                 label: parameter.label,
                 documentation: markdown(parameter.documentation)
               }))
@@ -234,7 +233,7 @@ export async function startLanguageServer(
     monaco.languages.registerDocumentHighlightProvider('*', {
       async provideDocumentHighlights(m, position) {
         if (!ours(m)) return null
-        const result: any[] = (await ask('textDocument/documentHighlight', atCursor(position))) ?? [] // eslint-disable-line @typescript-eslint/no-explicit-any
+        const result: any[] = (await ask('textDocument/documentHighlight', atCursor(position))) ?? []
         return result.map((highlight) => ({ range: fromLspRange(highlight.range), kind: Math.max(0, (highlight.kind ?? 1) - 1) }))
       }
     })
@@ -292,7 +291,7 @@ export async function startLanguageServer(
         if (!ours(m)) return null
         const wanted = toLspRange(range)
         const touching = lastDiagnostics.filter((d) => d.range.start.line <= wanted.end.line && d.range.end.line >= wanted.start.line)
-        const result: any[] = (await ask('textDocument/codeAction', { range: wanted, context: { diagnostics: touching, ...(context.only ? { only: [context.only] } : {}) } })) ?? [] // eslint-disable-line @typescript-eslint/no-explicit-any
+        const result: any[] = (await ask('textDocument/codeAction', { range: wanted, context: { diagnostics: touching, ...(context.only ? { only: [context.only] } : {}) } })) ?? []
         const actions = result
           .map((action) => {
             const split = splitWorkspaceEdit(action.edit, documentUri)

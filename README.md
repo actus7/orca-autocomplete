@@ -14,7 +14,7 @@ Works with **OpenAI**, **Anthropic**, **OpenRouter**, **Ollama** (free, on your 
 
 It takes about two minutes.
 
-1. **Install** the plugin from *Settings → Plugins*.
+1. **Install** the plugin from *Settings → Plugins*, or from a terminal: `orca plugin install actus7/orca-autocomplete`. Orca shows what the plugin asks for and a fingerprint; run the same command again with `--approve <fingerprint>` to accept it.
 2. **Open the Autocomplete panel**: the lightning icon in the right sidebar.
 3. **Choose your provider**, paste your API key, then type a model name or pick one from the list your provider offers. Press **Save and test**. Ollama needs no key.
 4. **Open a code file and pause while typing.** The suggestion appears in gray.
@@ -47,7 +47,7 @@ If something is not right, the panel says what happened and what to do next.
 
 **Pick the model from the list, or type its name.** A short list (up to 15 models) is just a picker, with a small link for a model it does not show. A long list gets a search box and a second tab to type the name. If the list cannot be loaded, you get a plain text field. Models are listed with how fast they are: a time followed by a × (for example `0.6s (14×)`) is the median of your own real suggestions, which is the most honest number. Where it makes sense (Ollama, OpenRouter and other long lists, not OpenAI or Anthropic) **Test speed** times up to 12 models with one short request each, your current model first. A star marks the fastest, a cross marks models that failed or answered something unusable, and **Use the fastest** selects the best.
 
-**Speed matters more than size.** Orca drops a suggestion that takes longer than about 2 seconds, so choose a small, fast model. The panel pre-fills a sensible one for each provider.
+**Speed matters more than size.** A suggestion that takes longer than 1.8 seconds arrives after you have moved on, so the plugin drops it. Choose a small, fast model. The panel pre-fills a sensible one for each provider.
 
 ## The status bar
 

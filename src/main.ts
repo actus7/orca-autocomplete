@@ -5,19 +5,20 @@ import { pickLocale, translator, type Translate } from './i18n.ts'
 import { LspManager } from './lsp/manager.ts'
 import { EditorSettingsWatcher } from './orca-editor/watcher.ts'
 import { BENCH_BATCH_SIZE, isExpectedAnswer, listModels, median } from './models.ts'
-import { presetFor } from './presets.ts'
+import { presetFor, sameAddress } from './presets.ts'
 
 const SECRET_KEY = 'apiKey'
 const LOCALE_KEY = 'locale'
 // The address the saved key belongs to: a key is never used for any other provider.
 const KEY_ADDRESS = 'keyAddress'
 const STATUS_ITEM = 'status'
-// Why: Orca drops a hook still running after 2 s; stop the request just before that.
+// Why: a suggestion that arrives later than this comes after the person has moved on, so stop waiting.
+// The panel shows the same number as its "fast enough" limit (SLOW_SECONDS in src/panel.tsx).
 const REQUEST_TIMEOUT_MS = 1800
 const CACHE_SIZE = 50
 const TEST_TIMEOUT_MS = 15_000
 const MODELS_TIMEOUT_MS = 10_000
-// Why: a model slower than the hook's limit is still worth showing, so the person sees how slow it is.
+// Why: a model slower than REQUEST_TIMEOUT_MS is still worth showing, so the person sees how slow it is.
 const BENCH_TIMEOUT_MS = 6000
 const BENCH_MAX_TOKENS = 32
 // The same small request for "Test connection" and for timing models, so the numbers compare.
@@ -47,7 +48,6 @@ function isUsage(value: unknown): value is Usage {
 type Config = { enabled: boolean; provider: Provider }
 type Stats = {
   suggested: number
-  slow: number
   lastMs: number | null
   lastError: string | null
   lastSlow: boolean
@@ -90,17 +90,6 @@ function hostOf(url: string): string {
   } catch {
     return ''
   }
-}
-
-function sameAddress(a: string, b: string): boolean {
-  const normalize = (url: string): string => {
-    try {
-      return new URL(url.trim()).href.replace(/\/+$/, '').toLowerCase()
-    } catch {
-      return ''
-    }
-  }
-  return normalize(a) !== '' && normalize(a) === normalize(b)
 }
 
 function keyMissing(config: Config): boolean {
@@ -162,7 +151,7 @@ const isLocalHost = (hostId: string | null): boolean => hostId === null || hostI
 const activate: Activate = (orca) => {
   // ponytail: insertion-ordered Map as LRU; swap for a real cache only if hit rate matters.
   const cache = new Map<string, string>()
-  const stats: Stats = { suggested: 0, slow: 0, lastMs: null, lastError: null, lastSlow: false }
+  const stats: Stats = { suggested: 0, lastMs: null, lastError: null, lastSlow: false }
   let lastLog = { message: '', at: 0 }
   let inflight: AbortController | null = null
 
@@ -268,16 +257,7 @@ const activate: Activate = (orca) => {
     }
     const startedAt = Date.now()
     try {
-      await complete(
-        config.provider,
-        {
-          path: 'test.ts',
-          languageId: 'typescript',
-          prefix: 'function add(a: number, b: number) {\n  return ',
-          suffix: '\n}'
-        },
-        AbortSignal.timeout(TEST_TIMEOUT_MS)
-      )
+      await complete(config.provider, TEST_EVENT, AbortSignal.timeout(TEST_TIMEOUT_MS))
       return { ok: true, message: '', ms: Date.now() - startedAt }
     } catch (error) {
       const host = new URL(config.provider.baseUrl).host
@@ -285,13 +265,14 @@ const activate: Activate = (orca) => {
     }
   }
 
-  /** One suggestion for the text around a cursor; '' when there is none. Shared by the native hook and the editor. */
+  /** One suggestion for the text around a cursor; '' when there is none. */
   async function suggest(event: CompletionContext): Promise<string> {
     const config = await readConfig(orca)
     if (!config?.enabled || keyMissing(config)) {
       return ''
     }
-    const key = `${event.path}\n${event.prefix.slice(-300)}\n${event.suffix.slice(0, 100)}`
+    // Why the provider is in the key: after switching model, the old model's answers must not come back.
+    const key = `${config.provider.baseUrl}|${config.provider.model}\n${event.path}\n${event.prefix.slice(-300)}\n${event.suffix.slice(0, 100)}`
     const cached = cache.get(key)
     if (cached !== undefined) {
       cache.delete(key)
@@ -324,7 +305,6 @@ const activate: Activate = (orca) => {
     } catch (error) {
       if (error instanceof Error && error.name === 'TimeoutError') {
         // Why: slowness is expected with some providers and is shown on the status item, not logged.
-        stats.slow += 1
         stats.lastSlow = true
         // Why: a timeout is a real data point; leaving it out would make a slow model look fast.
         void recordUsage(config.provider.baseUrl, config.provider.model, REQUEST_TIMEOUT_MS).catch(() => undefined)
@@ -345,16 +325,6 @@ const activate: Activate = (orca) => {
         inflight = null
       }
     }
-  }
-
-  // Why: an Orca older than the hook rejects the declaration; the editor path then still works.
-  try {
-    orca.hooks.on('editor.inlineCompletion', async (event, next) => {
-      const suggestion = await suggest(event)
-      return suggestion ? next({ ...event, suggestion }) : undefined
-    })
-  } catch (error) {
-    orca.log(`native inline completion hook unavailable: ${error instanceof Error ? error.message : String(error)}`)
   }
 
   // Workspace folders on this computer: a language server needs a project folder, and a remote one is out of reach.
@@ -408,6 +378,9 @@ const activate: Activate = (orca) => {
     onChange: (settings) => orca.panels.post('editor.settings.changed', { settings })
   })
   const watcher = editorSettings
+  // Why now: finding Orca's data folder asks the system about the process above this one, which takes a
+  // few seconds on Windows. Doing it while the plugin loads keeps the first file from waiting for it.
+  void watcher.start()
   orca.panels.handle('editor.settings', async () => ({ settings: await watcher.start(), source: watcher.source() }))
 
   orca.panels.handle('completion.ask', async (context) => ({ suggestion: await suggest(context) }))

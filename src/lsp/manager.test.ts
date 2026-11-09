@@ -49,7 +49,7 @@ test('attach starts the server, opens the document and delivers its diagnostics'
     await until(() => diagnostics.length > 0)
     assert.equal(diagnostics[0].docId, 'd1')
     assert.equal((diagnostics[0].diagnostics[0] as { message: string }).message, 'BAD found')
-    assert.ok('hoverProvider' in manager.capabilitiesOf('d1'))
+    assert.ok(status.state === 'ready' && 'hoverProvider' in status.capabilities)
   } finally {
     done()
   }

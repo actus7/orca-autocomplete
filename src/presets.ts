@@ -33,13 +33,21 @@ export const PRESETS: readonly Preset[] = [
   { id: 'custom-anthropic', format: 'anthropic', baseUrl: null, model: '', keyKind: 'optional', bench: 'some' }
 ]
 
-function sameUrl(a: string, b: string): boolean {
-  return a.trim().replace(/\/+$/, '').toLowerCase() === b.replace(/\/+$/, '').toLowerCase()
+/** Whether two base URLs are the same address, whatever the case, the trailing slash or the spelling of the host. */
+export function sameAddress(a: string, b: string): boolean {
+  const normalize = (url: string): string => {
+    try {
+      return new URL(url.trim()).href.replace(/\/+$/, '').toLowerCase()
+    } catch {
+      return ''
+    }
+  }
+  return normalize(a) !== '' && normalize(a) === normalize(b)
 }
 
 /** The preset a saved format and base URL correspond to; a custom one when none matches. */
 export function presetFor(format: ProviderFormat, baseUrl: string): Preset {
-  const known = PRESETS.find((p) => p.baseUrl !== null && p.format === format && sameUrl(baseUrl, p.baseUrl))
+  const known = PRESETS.find((p) => p.baseUrl !== null && p.format === format && sameAddress(baseUrl, p.baseUrl))
   const fallback = PRESETS.find((p) => p.id === `custom-${format}`)
   return known ?? fallback ?? PRESETS[0]
 }

@@ -52,8 +52,7 @@ export function registerInlineAi(monaco: typeof Monaco, filePath: () => string):
         ]
       }
     },
-    // Monaco calls the free/dispose pair when a suggestion list is done; there is nothing to release.
-    freeInlineCompletions() {},
-    disposeInlineCompletions() {}
-  } as Monaco.languages.InlineCompletionsProvider)
+    // Monaco calls this when a suggestion list is done; there is nothing to release.
+    freeInlineCompletions() {}
+  })
 }

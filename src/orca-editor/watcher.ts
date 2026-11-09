@@ -39,6 +39,8 @@ export class EditorSettingsWatcher {
   private latest: ResolvedEditor | null = null
   private databaseFile: string | null = null
   private reading = false
+  /** The first read, so a second `start()` while it runs waits for it instead of seeing nothing. */
+  private firstRead: Promise<void> = Promise.resolve()
 
   constructor(options: WatcherOptions) {
     this.options = options
@@ -59,8 +61,9 @@ export class EditorSettingsWatcher {
     if (!this.timer) {
       this.timer = setInterval(() => void this.check(), POLL_MS)
       this.timer.unref()
-      await this.check(true)
+      this.firstRead = this.check(true)
     }
+    await this.firstRead
     return this.latest
   }
 
@@ -68,6 +71,7 @@ export class EditorSettingsWatcher {
     if (this.timer) {
       clearInterval(this.timer)
       this.timer = null
+      this.firstRead = Promise.resolve()
     }
   }
 

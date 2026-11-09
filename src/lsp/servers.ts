@@ -49,7 +49,7 @@ const tsServer: ServerSpec = {
 const clangd: ServerSpec = { name: 'clangd', command: 'clangd', args: [] }
 
 /** Candidates per language of the editor, best first. Languages with a built-in service are left out on purpose. */
-export const SERVERS: Record<string, readonly ServerSpec[]> = {
+const SERVERS: Record<string, readonly ServerSpec[]> = {
   typescript: [tsServer],
   javascript: [tsServer],
   python: [

@@ -223,6 +223,28 @@ test('the watcher reports the first values, then only real changes, and re-reads
   assert.equal(watcher.current()?.minimap, true)
 })
 
+// Why: the worker starts the watcher when it loads, and the editor asks for the values while that
+// first (slow) read is still running; it must get the values, not null.
+test('a second start() waits for the first read instead of answering before it finished', async () => {
+  let release: () => void = () => undefined
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  const watcher = new EditorSettingsWatcher({
+    find: async () => (await gate, '/db'),
+    stamp: () => 'a',
+    read: async () => ({ settings: { editorMinimapEnabled: true }, ui: {} }),
+    onChange: () => undefined
+  })
+  try {
+    const first = watcher.start()
+    const second = watcher.start()
+    release()
+    assert.equal((await second)?.minimap, true)
+    assert.equal((await first)?.minimap, true)
+  } finally {
+    watcher.stop()
+  }
+})
+
 test('when the database cannot be read the watcher reports null so the plugin\u2019s own settings apply', async () => {
   const changes: unknown[] = []
   const watcher = new EditorSettingsWatcher({ find: () => null, onChange: (value) => void changes.push(value) })

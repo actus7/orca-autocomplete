@@ -310,10 +310,4 @@ export class LspManager {
       return { error: `${spec.name} ${error instanceof Error ? error.message : String(error)}` }
     }
   }
-
-  /** What the running server for a document offers, so the editor registers only what exists. */
-  capabilitiesOf(docId: string): Record<string, unknown> {
-    const doc = this.documents.get(docId)
-    return (doc && this.servers.get(doc.serverKey)?.capabilities) ?? {}
-  }
 }

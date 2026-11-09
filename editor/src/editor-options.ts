@@ -6,8 +6,8 @@
 // Pure data in, options out: no Monaco import, so Node can test it.
 
 /** Orca's own limits for the editor font size. */
-export const FONT_SIZE_MIN = 10
-export const FONT_SIZE_MAX = 24
+const FONT_SIZE_MIN = 10
+const FONT_SIZE_MAX = 24
 /** The size Orca uses when none is set. */
 export const FONT_SIZE_DEFAULT = 13
 

@@ -30,7 +30,6 @@ declare module 'orca' {
     hasKey: boolean
   }
 
-  // oxlint-disable-next-line typescript/consistent-type-definitions -- declaration merging needs an interface
   interface PluginRequests {
     'status.get': { input: Record<string, never>; output: StatusSnapshot }
     /** Stores the key in the plugin's encrypted secrets; an empty string removes it. */
@@ -80,7 +79,6 @@ declare module 'orca' {
       output: { ok: boolean; message: string; ms: number | null }
     }
   }
-  // oxlint-disable-next-line typescript/consistent-type-definitions -- declaration merging needs an interface
   interface PluginPanelEvents {
     'status.changed': StatusSnapshot
     'editor.settings.changed': { settings: OrcaEditorSettings | null }

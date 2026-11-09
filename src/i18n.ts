@@ -27,7 +27,7 @@ const en = {
   'stats.line': 'Last answer {seconds} s · Suggestions shown: {count}',
   'slow.title': 'Answers are too slow',
   'slow.body':
-    'The provider took more than {seconds} s, so Orca dropped the suggestion. Try a faster model.',
+    'The provider took more than {seconds} s, so the suggestion came too late and was dropped. Try a faster model.',
   'error.title': 'The last request failed',
   'provider.title': 'Provider settings',
   provider: 'Provider',
@@ -44,7 +44,6 @@ const en = {
   'models.placeholder': 'Choose a model',
   'models.load': 'Load models',
   'models.loading': 'Loading models…',
-  'models.total': '{total} models available.',
   'models.count': 'Showing {shown} of {total}. Use the search to narrow the list.',
   'models.none': 'The provider listed no models. You can still type the model name.',
   'models.failed': 'Could not load the list. {reason} You can still type the model name.',
@@ -130,7 +129,7 @@ const pt: Record<Key, string> = {
   'stats.line': 'Última resposta {seconds} s · Sugestões mostradas: {count}',
   'slow.title': 'Respostas lentas demais',
   'slow.body':
-    'O provedor demorou mais de {seconds} s e o Orca descartou a sugestão. Tente um modelo mais rápido.',
+    'O provedor demorou mais de {seconds} s, então a sugestão chegou tarde e foi descartada. Tente um modelo mais rápido.',
   'error.title': 'A última requisição falhou',
   'provider.title': 'Configurações do provedor',
   provider: 'Provedor',
@@ -147,7 +146,6 @@ const pt: Record<Key, string> = {
   'models.placeholder': 'Escolha um modelo',
   'models.load': 'Carregar modelos',
   'models.loading': 'Carregando modelos…',
-  'models.total': '{total} modelos disponíveis.',
   'models.count': 'Mostrando {shown} de {total}. Use a busca para filtrar.',
   'models.none': 'O provedor não listou modelos. Você ainda pode digitar o nome do modelo.',
   'models.failed': 'Não foi possível carregar a lista. {reason} Você ainda pode digitar o nome do modelo.',

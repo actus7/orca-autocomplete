@@ -3,7 +3,6 @@ import { test } from 'node:test'
 import activate from './main.ts'
 
 type Json = Record<string, unknown>
-const HOOK = 'editor.inlineCompletion'
 const asked = {
   workspaceId: null,
   path: 'a.ts',
@@ -30,7 +29,6 @@ async function mountWorker(
 ) {
   const settings = { ...initial }
   const store = new Map<string, unknown>([['locale', locale]])
-  const hooks = new Map<string, (event: Json, next: (e: Json) => unknown) => unknown>()
   const handlers = new Map<string, (input: Json) => Promise<unknown>>()
   const commands = new Map<string, () => Promise<unknown>>()
   const statusUpdates: Json[] = []
@@ -38,7 +36,6 @@ async function mountWorker(
   const logs: string[] = []
   const disposable = { dispose() {} }
   const orca = {
-    hooks: { on: (name: string, fn: never) => (hooks.set(name, fn), disposable) },
     panels: {
       handle: (name: string, fn: never) => (handlers.set(name, fn), disposable),
       post: (event: string, payload: Json) => void posts.push({ event, payload })
@@ -80,11 +77,10 @@ async function mountWorker(
       await new Promise((resolve) => setTimeout(resolve, 0))
       return statusUpdates.at(-1)
     },
+    /** Asks the way the plugin's editor does; the event comes back with `suggestion` set when there is one. */
     async fire(event: Json): Promise<Json> {
-      const result = (await hooks.get(HOOK)!(event, (e) => ({ next: e }))) as
-        | { next: Json }
-        | undefined
-      return result?.next ?? event
+      const { suggestion } = (await handlers.get('completion.ask')!(event)) as { suggestion: string }
+      return suggestion ? { ...event, suggestion } : event
     },
     request: (name: string, input: Json = {}) => handlers.get(name)!(input),
     command: (name: string) => commands.get(name)!()
@@ -99,7 +95,7 @@ function stubFetch(status: number, body: unknown): () => void {
   }
 }
 
-test('the hook sets suggestion from the provider answer', async () => {
+test('a suggestion comes from the provider answer', async () => {
   const restore = stubFetch(200, { choices: [{ message: { content: '42' } }] })
   try {
     const worker = await mountWorker()
@@ -109,12 +105,29 @@ test('the hook sets suggestion from the provider answer', async () => {
   }
 })
 
-test('the hook passes untouched when disabled', async () => {
+// Why: the model list lets people try one model after another at the same spot of the same file;
+// an answer remembered from the previous model would be shown as if the new one had given it.
+test('a remembered suggestion is not reused after the model changes', async () => {
+  const real = globalThis.fetch
+  const answers = ['from-first', 'from-second']
+  globalThis.fetch = async () => new Response(JSON.stringify({ choices: [{ message: { content: answers.shift() } }] }))
+  try {
+    const worker = await mountWorker()
+    assert.equal((await worker.fire(asked)).suggestion, 'from-first')
+    assert.equal((await worker.fire(asked)).suggestion, 'from-first', 'same model: answered from memory')
+    worker.settings.model = 'another-model'
+    assert.equal((await worker.fire(asked)).suggestion, 'from-second', 'new model: asked again')
+  } finally {
+    globalThis.fetch = real
+  }
+})
+
+test('nothing is suggested when disabled', async () => {
   const worker = await mountWorker({ ...baseSettings, enabled: false })
   assert.deepEqual(await worker.fire(asked), asked)
 })
 
-test('the hook does not call a provider that needs a key before one is saved', async () => {
+test('a provider that needs a key is not called before one is saved', async () => {
   const real = globalThis.fetch
   let calls = 0
   globalThis.fetch = async () => {
