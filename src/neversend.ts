@@ -1,6 +1,8 @@
-// Code that looks like it holds a secret is never sent to a provider. The check looks at exactly the
-// text that would be sent, and only for patterns that are rarely anything else, so ordinary code is
-// not held back. When it finds one the plugin simply makes no suggestion there.
+// Code that looks like it holds a secret is never sent to a provider. The check is for patterns that
+// are rarely anything else, so ordinary code is not held back. When it finds one the plugin simply
+// makes no suggestion there. The caller looks at a margin beyond what it sends, because a secret that
+// begins outside the text and reaches into it (a token cut in half, a key whose first line is above)
+// would otherwise go out in part.
 
 type Rule = { kind: string; pattern: RegExp }
 
@@ -8,7 +10,10 @@ type Rule = { kind: string; pattern: RegExp }
 const PLACEHOLDER = /^(?:x{3,}|\*{3,}|\.{3,}|<[^>]*>|\$\{[^}]*\}|\{\{[^}]*\}\}|your[_-].*|example.*|changeme|placeholder.*|secret|password|token)$/i
 
 const RULES: readonly Rule[] = [
-  { kind: 'private key', pattern: /-----BEGIN (?:[A-Z]+ )*PRIVATE KEY(?: BLOCK)?-----/ },
+  // Either end of the block: a window can hold the middle and one marker, or only the body.
+  { kind: 'private key', pattern: /-----(?:BEGIN|END) (?:[A-Z]+ )*PRIVATE KEY(?: BLOCK)?-----/ },
+  // The body of a key or certificate: several full lines of base64, as PEM and MIME wrap them.
+  { kind: 'key body', pattern: /(?:^[A-Za-z0-9+/]{60,80}={0,2}[ \t]*\r?\n){3}/m },
   { kind: 'AWS access key', pattern: /\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[0-9A-Z]{16}\b/ },
   { kind: 'AWS secret key', pattern: /aws_secret_access_key\s*[=:]\s*["']?[A-Za-z0-9/+=]{40}\b/i },
   { kind: 'API key (sk-)', pattern: /\bsk-(?:ant-|proj-|live-|or-)?[A-Za-z0-9_-]{20,}/ },

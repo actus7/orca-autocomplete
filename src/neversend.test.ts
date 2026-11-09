@@ -8,6 +8,11 @@ const A = (n: number, c = 'A'): string => c.repeat(n)
 const SECRETS: [string, string][] = [
   ['private key', `-----BEGIN ${'RSA '}PRIVATE KEY-----\nMIIE`],
   ['private key', `-----BEGIN ${'OPENSSH '}PRIVATE KEY-----`],
+  ['private key', '-----END RSA PRIVATE KEY-----'],
+  ['key body', `${'Q'.repeat(64)}
+${'w'.repeat(64)}
+${'e'.repeat(64)}
+`],
   ['AWS access key', `const id = "AKIA${A(16)}"`],
   ['AWS secret key', `aws_secret_access_key = ${A(40, 'a')}`],
   ['API key (sk-)', `OPENAI_API_KEY=sk-${A(30, 'a')}`],
@@ -40,6 +45,10 @@ test('ordinary code is not held back', () => {
     'import skLearn from "sk-learn"',
     'const id = "550e8400-e29b-41d4-a716-446655440000"',
     'const url = "https://example.com/path?x=1"',
+    `const png = "data:image/png;base64,${'A'.repeat(200)}"`,
+    `${'Q'.repeat(64)}
+${'w'.repeat(64)}
+const two = 1`,
     'const home = "http://user@host/path"',
     'function authToken(): string { return load() }',
     'const style = "background: url(data:image/png;base64,iVBORw0KGgo=)"'

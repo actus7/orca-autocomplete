@@ -32,6 +32,10 @@ const SYSTEM_PROMPT =
   'statement ends: never write code that belongs after it, and never repeat code that is already ' +
   'before or after the cursor. No explanation and no markdown fences. Reply with nothing if unsure.'
 
+// Why a margin: a secret that starts just outside what is sent and reaches into it (a token cut in half,
+// the body of a key whose first line is above) would go out in part if only the sent text were checked.
+const SECRET_MARGIN_CHARS = 2000
+
 /** The part of the file that is sent: the text just before the cursor and just after it, capped. */
 function windowOf(ctx: CompletionContext): { prefix: string; suffix: string } {
   return { prefix: ctx.prefix.slice(-PREFIX_CHARS), suffix: ctx.suffix.slice(0, SUFFIX_CHARS) }
@@ -199,9 +203,9 @@ export async function complete(
   signal: AbortSignal,
   fetchImpl: FetchLike = fetch
 ): Promise<string> {
-  // Why here: every request to a provider goes through this function, and the check sees what would be sent.
-  const sent = windowOf(ctx)
-  if (findSecret(`${sent.prefix}\n${sent.suffix}`)) {
+  // Why here: every request to a provider goes through this function.
+  const around = `${ctx.prefix.slice(-(PREFIX_CHARS + SECRET_MARGIN_CHARS))}\n${ctx.suffix.slice(0, SUFFIX_CHARS + SECRET_MARGIN_CHARS)}`
+  if (findSecret(around)) {
     return ''
   }
   const { url, init } = buildRequest(provider, ctx)

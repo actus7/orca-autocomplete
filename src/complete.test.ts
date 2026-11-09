@@ -11,6 +11,7 @@ import {
   type FetchLike,
   type Provider
 } from './complete.ts'
+import { findSecret } from './neversend.ts'
 
 const ctx: CompletionContext = {
   path: 'src/a.ts',
@@ -186,4 +187,32 @@ test('a fenced block is kept when writing a document and stripped when completin
   const signal = AbortSignal.timeout(1000)
   assert.equal(await complete(openai, prose, signal, fetchImpl), fenced)
   assert.equal(await complete(openai, ctx, signal, fetchImpl), 'run()')
+})
+
+const okFetch = (counter: { calls: number }): FetchLike => async () => {
+  counter.calls += 1
+  return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'x' } }] }), text: async () => '' }
+}
+
+// Why: the text sent is cut at a fixed length, which can fall inside a secret. The part that stays in is
+// too short for any rule to recognise, so the check has to look beyond what is sent.
+test('a token that the cut of the sent text splits in half is still caught', async () => {
+  const token = `sk-${'k'.repeat(40)}`
+  const prefix = `${'a'.repeat(1000)} ${token}${'b'.repeat(5985)}`
+  const sent = prefix.slice(-6000)
+  assert.ok(sent.includes('k'.repeat(15)) && !sent.includes(token), 'the sent text holds only the end of the token')
+  assert.equal(findSecret(sent), null, 'and that part alone looks like nothing')
+  const counter = { calls: 0 }
+  assert.equal(await complete(openai, { ...ctx, prefix }, AbortSignal.timeout(1000), okFetch(counter)), '')
+  assert.equal(counter.calls, 0)
+})
+
+test('the body of a long key is caught even when its first line is far out of sight', async () => {
+  const body = `${'Q'.repeat(64)}\n`.repeat(200)
+  const prefix = `-----BEGIN PRIVATE KEY-----\n${body}`
+  const sent = prefix.slice(-6000)
+  assert.ok(!sent.includes('BEGIN'), 'the marker is not in what is sent')
+  const counter = { calls: 0 }
+  assert.equal(await complete(openai, { ...ctx, prefix }, AbortSignal.timeout(1000), okFetch(counter)), '')
+  assert.equal(counter.calls, 0)
 })
