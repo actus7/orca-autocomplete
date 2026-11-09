@@ -1,41 +1,86 @@
+<p align="center"><img src="assets/cover.png" alt="Autocomplete for Orca: gray suggestions as you type, from the AI you choose" width="820"></p>
+
 # Autocomplete for Orca
 
-Inline AI code completion (ghost text, like Copilot) in Orca's editor. Bring your own provider:
-anything that speaks the **OpenAI** (`/chat/completions`) or **Anthropic** (`/v1/messages`) API.
+Gray suggestions as you type, from the AI provider you choose. Press **Tab** to accept one, **Esc** to dismiss it.
 
-> Needs an Orca release that includes the `editor.inlineCompletion` plugin hook (`engines.orca >=1.4.256`).
+Works with **OpenAI**, **Anthropic**, **OpenRouter**, **Ollama** (free, on your computer) and any API that speaks the OpenAI or Anthropic format.
 
-## Setup
+> **Requires Orca 1.4.256 or newer.** That release adds the `editor.inlineCompletion` hook this plugin uses.
 
-1. Install the plugin from Settings → Plugins.
-2. Settings → Plugins → Autocomplete: choose the format, base URL and model.
-3. Open the **Autocomplete** panel, paste your API key, press **Save key**, then **Test connection**.
-4. Type in any file and pause for a moment: the suggestion appears as ghost text. `Tab` accepts it.
+<p align="center"><img src="assets/screenshot-editor.png" alt="A gray suggestion at the cursor, with a Tab key hint" width="720"></p>
 
-The key is stored in Orca's encrypted plugin secrets and is only sent to the base URL you set.
-Leave it empty for local servers.
+## Quick start
 
-## Provider examples
+It takes about two minutes.
 
-| Provider | Format | Base URL | Model |
-| --- | --- | --- | --- |
-| OpenAI | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
-| Ollama (local) | OpenAI | `http://localhost:11434/v1` | `qwen2.5-coder:1.5b` |
-| OpenRouter | OpenAI | `https://openrouter.ai/api/v1` | any fast model |
-| Anthropic | Anthropic | `https://api.anthropic.com` | a Haiku model |
+1. **Install** the plugin from *Settings → Plugins*.
+2. **Open the Autocomplete panel**: the lightning icon in the right sidebar.
+3. **Choose your provider**, paste your API key and press **Save and test**. Ollama needs no key.
+4. **Type in any file and pause for a moment.** The suggestion appears in gray.
 
-Pick a **fast** model: Orca drops a hook answer that takes longer than about 2 seconds.
+If something is not right, the panel says what happened and what to do next.
+
+## Choose a provider
+
+| Provider | API key | Notes |
+| --- | --- | --- |
+| OpenAI | Yes | Pick a small, fast model. |
+| Anthropic (Claude) | Yes | A Haiku-class model is a good fit. |
+| OpenRouter | Yes | One key, many models. |
+| Ollama | No | Runs on your computer: free and private. Start Ollama first. |
+| Other, OpenAI-compatible | Optional | Any gateway or proxy with a `/chat/completions` endpoint. |
+| Other, Anthropic-compatible | Optional | Any endpoint with a `/v1/messages` endpoint. |
+
+**Speed matters more than size.** Orca drops a suggestion that takes longer than about 2 seconds, so choose a small, fast model. The panel pre-fills a sensible one for each provider.
+
+## The status bar
+
+The lightning icon at the bottom of Orca shows the state at a glance. Click it to turn Autocomplete on or off.
+
+| Color | Meaning |
+| --- | --- |
+| Green | Active. Shows how long the last answer took. |
+| Gray | Off. |
+| Yellow, "set up" | Finish the setup in the panel. |
+| Yellow, "slow" | The provider answers too slowly; try a faster model. |
+| Red | The last request failed. Hover for the reason and what to do. |
+
+The command palette also has **Autocomplete: Turn on or off** and **Autocomplete: Test connection**.
 
 ## Privacy
 
-On each pause the text around your cursor (up to ~6,000 characters before and ~2,000 after, plus the
-file path and language) is sent to the provider you configured, and nowhere else. The plugin has no
-telemetry. Turn it off with the **Enabled** setting.
+When you pause typing, the text around your cursor (up to about 6,000 characters before it and 2,000 after, plus the file name and language) is sent to the provider **you** chose, and nowhere else. Your API key is stored encrypted by Orca and only sent to that provider. The plugin has no telemetry and no analytics. Turn it off any time from the panel or the status bar.
 
-## Development
+## Troubleshooting
+
+| What you see | What to do |
+| --- | --- |
+| Nothing appears | Pause for a moment after typing. Check that the status bar icon is green. Not every spot gets a suggestion. |
+| "The provider rejected the key" | Paste the key again in the panel and press **Save and test**. Check that it belongs to the provider you picked. |
+| "Model or address not found" | Check the model name and, for the *Other* providers, the base URL. |
+| "Could not reach … Is the server running?" | For Ollama, start it. Otherwise check the address and your connection. |
+| Yellow "slow" | Pick a smaller model, or one hosted closer to you. |
+| "Rate limit reached" | Wait a moment, or pick another model. |
+
+## Português (pt-BR)
+
+O painel, a barra de status e os avisos aparecem em português quando o Orca está em pt-BR.
+
+**Começo rápido**
+1. Instale o plugin em *Settings → Plugins*.
+2. Abra o painel **Autocomplete** (o raio na barra lateral direita).
+3. Escolha o provedor, cole a chave de API e toque em **Salvar e testar**. O Ollama não precisa de chave.
+4. Digite em qualquer arquivo e faça uma pausa. A sugestão aparece em cinza; **Tab** aceita e **Esc** descarta.
+
+**Privacidade:** o texto ao redor do cursor vai apenas para o provedor que você escolheu. A chave fica guardada criptografada pelo Orca. Não há rastreamento.
+
+## For developers
 
 ```sh
-npm test   # request/response logic, no dependencies (Node 22.18+)
+npm test    # request/response logic, UI strings, worker behavior; no dependencies (Node 22.18+)
 ```
+
+The listing images are rendered from `assets/templates` with `assets/build.mjs` (needs Playwright; see the header of that file).
 
 MIT licensed.

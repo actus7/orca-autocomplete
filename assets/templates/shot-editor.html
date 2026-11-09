@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="base.css">
+<style>
+  body { width: 1920px; height: 1200px; display: grid; place-items: center; }
+  .editor { width: 1500px; }
+  .code { font-size: 34px; padding: 36px 0 44px; }
+  .tab { height: 72px; font-size: 24px; }
+</style>
+<div class="editor">
+  <div class="tab"><b>users.ts</b></div>
+  <div class="code">
+    <div class="line"><span class="no">1</span><span><span class="cm">// Names of the users who are over 18.</span></span></div>
+    <div class="line"><span class="no">2</span><span><span class="kw">const</span> users = [{ name: <span class="str">'Ana'</span>, age: 31 }, { name: <span class="str">'Rui'</span>, age: 17 }]</span></div>
+    <div class="line"><span class="no">3</span><span></span></div>
+    <div class="line"><span class="no">4</span><span><span class="kw">export function</span> <span class="fn">adultNames</span>(list: <span class="ty">typeof</span> users): <span class="ty">string</span>[] {</span></div>
+    <div class="line"><span class="no">5</span><span>  <span class="kw">return</span> <span class="caret"></span><span class="ghost">list.filter((u) =&gt; u.age &gt;= 18).map((u) =&gt; u.name)</span><span class="key">Tab</span></span></div>
+    <div class="line"><span class="no">6</span><span>}</span></div>
+  </div>
+</div>
+<style>.str { color: #0a7d5a; }</style>

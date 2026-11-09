@@ -105,5 +105,18 @@
     {
       "kind": "storage:own"
     }
+  ],
+  "icon": "assets/icon.png",
+  "homepage": "https://github.com/actus7/orca-autocomplete",
+  "cover": {
+    "path": "assets/cover.png",
+    "alt": "The plugin name, Autocomplete, beside a code editor where gray suggested code follows the cursor and a Tab key hint shows how to accept it"
+  },
+  "screenshots": [
+    {
+      "path": "assets/screenshot-editor.png",
+      "alt": "A TypeScript function where a gray suggestion follows the cursor, with a Tab key hint beside it",
+      "caption": "A gray suggestion at the cursor. Tab accepts it."
+    }
   ]
 }
