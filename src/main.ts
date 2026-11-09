@@ -408,7 +408,7 @@ const activate: Activate = (orca) => {
     onChange: (settings) => orca.panels.post('editor.settings.changed', { settings })
   })
   const watcher = editorSettings
-  orca.panels.handle('editor.settings', async () => ({ settings: await watcher.start() }))
+  orca.panels.handle('editor.settings', async () => ({ settings: await watcher.start(), source: watcher.source() }))
 
   orca.panels.handle('completion.ask', async (context) => ({ suggestion: await suggest(context) }))
 

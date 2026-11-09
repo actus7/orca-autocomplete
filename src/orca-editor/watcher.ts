@@ -37,6 +37,7 @@ export class EditorSettingsWatcher {
   private timer: ReturnType<typeof setInterval> | null = null
   private lastStamp: string | null = null
   private latest: ResolvedEditor | null = null
+  private databaseFile: string | null = null
   private reading = false
 
   constructor(options: WatcherOptions) {
@@ -46,6 +47,11 @@ export class EditorSettingsWatcher {
   /** The values now, or null when Orca's settings cannot be read (the plugin's own settings apply). */
   current(): ResolvedEditor | null {
     return this.latest
+  }
+
+  /** The database file the values come from, so a wrong choice of Orca can be seen. */
+  source(): string | null {
+    return this.databaseFile
   }
 
   /** Reads once and keeps watching. Safe to call again. */
@@ -78,6 +84,7 @@ export class EditorSettingsWatcher {
         return
       }
       this.lastStamp = stamp
+      this.databaseFile = file
       const documents = file ? await (this.options.read ?? readDocuments)(file) : null
       const next = documents?.settings ? resolveOrcaEditor(documents.settings, documents.ui) : null
       if (JSON.stringify(next) !== JSON.stringify(this.latest)) {
