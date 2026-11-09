@@ -2,6 +2,16 @@
 
 A listed version is permanent in Orca's catalog, so every change ships as a new version.
 
+## 0.3.0
+
+- **Next edit**: after you change a line and pause, the same change is offered where it is also needed. A rename is carried over to the other uses with no AI; with the setting on, your provider is asked for the rest. It is drawn in the theme's own colors for removed and added text, with the key that applies it (Tab) beside it.
+- The panel shows the statistics as labelled numbers, asks twice before clearing them, writes dates the way your language does, and says so when the plugin does not answer instead of looking empty.
+- The editor speaks Portuguese where the panel already did (actions, rename messages, the language server pill, the start failure).
+- The language server pill folds down to a dot after a few seconds, so it stops covering the last lines; pointing at it shows the name again.
+- Fix: an address that only starts like this computer (`localhost.example.com`, `127.0.0.1.nip.io`) is no longer said to run on this computer.
+- Faster typing in large files: the editor no longer copies the whole file on every keystroke or for every suggestion.
+- `npm test` works on Node 22 again, and `npm run test:panel` tests the panel in Orca's own runtime.
+
 ## 0.2.0
 
 - **Snippets**, with no AI and no language server: short words that expand into common code for TypeScript, JavaScript, Python, Go, Rust, Java, C#, C and C++, PHP, Ruby, Shell and SQL. They open with Ctrl+Space, so they never compete with the gray suggestion.

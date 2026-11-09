@@ -8,9 +8,11 @@ import { NATIVE_OPTIONS, PLUGIN_OPTIONS, settingOptions, themeFor, type OrcaEdit
 import { smallestEdit } from './edits.ts'
 import { startLanguageServer } from './lsp.ts'
 import { grammarLoaders, grammarOf } from './languages.generated.ts'
+import { registerNextEdit } from './nextedit.ts'
 import { registerPostfix } from './postfix.ts'
 import { prepareLanguageService, stepAsideBuiltInTypeScript, workerFileFor } from './services.ts'
 import { registerSnippets } from './snippets.ts'
+import { say } from './strings.ts'
 import { followOrcaTheme, isDark } from './theme.ts'
 
 const page = window.__LANGUAGE__ ?? 'plaintext'
@@ -61,12 +63,21 @@ async function start(): Promise<void> {
     refreshOptions()
   })
 
+  // True while a change from Orca (the file changed underneath) is being applied, so it is not taken for typing.
+  let applying = false
+
   // The suggestion prompt names the file; a frame never learns the real name, so use its type.
   const fileName = (): string => `untitled${GRAMMARS.find((entry) => entry.id === model.getLanguageId())?.extensions[0] ?? ''}`
   registerInlineAi(monaco, editor, fileName)
   // The part that needs no model and no server: snippets and postfix templates, with the AI off as with it on.
   registerSnippets(monaco)
   registerPostfix(monaco)
+  // After an edit and a pause: the same rename in the other places (no model), or what the model says comes next.
+  registerNextEdit(monaco, editor, {
+    fileName,
+    isProse: () => ['markdown', 'plaintext'].includes(model.getLanguageId()),
+    isExternal: () => applying
+  })
 
   // A language server installed on this computer, when there is one and the file is in a workspace.
   const grammar = GRAMMARS.find((entry) => entry.id === language)
@@ -85,19 +96,21 @@ async function start(): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined
     model.onDidChangeContent(() => {
       clearTimeout(timer)
-      timer = setTimeout(async () => {
+      timer = setTimeout(() => {
         const detected = detectLanguage(model.getValue())
-        if (detected !== model.getLanguageId()) {
+        if (detected === model.getLanguageId()) {
+          return
+        }
+        void (async () => {
           await grammarLoaders[grammarOf[detected]]?.()
           await prepareLanguageService(monaco, detected, model.getValue())
           monaco.editor.setModelLanguage(model, detected)
-        }
+        })().catch((error: unknown) => console.warn('language could not be loaded', error))
       }, DETECT_DELAY_MS)
     })
   }
 
   // Orca owns the file; keep the editor and Orca's copy equal without echoing our own edits back.
-  let applying = false
   model.onDidChangeContent(() => {
     if (!applying) {
       session.change(model.getValue())
@@ -124,5 +137,13 @@ async function start(): Promise<void> {
 start().catch((error: unknown) => {
   // Orca copies frame errors into the plugin's log; also say it on screen so the tab is not blank.
   console.error(error)
-  root.textContent = `Autocomplete could not start: ${error instanceof Error ? error.message : String(error)}`
+  const failure = document.createElement('div')
+  failure.className = 'start-failed'
+  failure.setAttribute('role', 'alert')
+  const title = document.createElement('strong')
+  title.textContent = say('start.failed')
+  const detail = document.createElement('span')
+  detail.textContent = error instanceof Error ? error.message : String(error)
+  failure.append(title, detail)
+  root.replaceChildren(failure)
 })

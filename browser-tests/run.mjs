@@ -51,7 +51,7 @@ if (!chrome) {
 const plugin = join(here, '..')
 let server
 const work = mkdtempSync(join(tmpdir(), 'orca-autocomplete-browser-'))
-for (const page of ['ghost', 'lsp', 'core']) {
+for (const page of ['ghost', 'lsp', 'core', 'next']) {
   await build({
     entryPoints: [join(here, `${page}.ts`)],
     bundle: true,
@@ -263,6 +263,99 @@ try {
     assert.ok(!/\.(if|log|var|return)/.test(shown), `postfix items inside a string: ${shown}`)
   })
   core.close()
+
+  const next = await open('next')
+  console.log('the next edit')
+  const proposed = async () => JSON.parse(await next.ev('JSON.stringify(__proposed())'))
+  const text = async () => (await next.ev('__editor.getValue()')).replace(/\r\n/g, '\n')
+  const SETTLE = 1400
+  // Starts from `value`, then makes the edit a person would: `from` becomes `to` at the first place it appears.
+  const start = async (value, from, to, { ai = false, prediction = null } = {}) => {
+    await next.ev(`__settings.nextEdit = ${ai}; __prediction = ${JSON.stringify(prediction)}; __log.length = 0; __editor.setValue(${JSON.stringify(value)}); 1`)
+    await sleep(SETTLE) // the setValue is itself a change; let it settle and be forgotten
+    await next.ev(`(() => { __editor.focus(); const m = __editor.getModel(); const at = m.getValue().indexOf(${JSON.stringify(from)}); const p = m.getPositionAt(at); const q = m.getPositionAt(at + ${from.length}); __editor.executeEdits('person', [{ range: new (m.getFullModelRange().constructor)(p.lineNumber, p.column, q.lineNumber, q.column), text: ${JSON.stringify(to)} }]); __editor.setPosition(m.getPositionAt(at + ${to.length})); })(); 1`)
+    await sleep(SETTLE)
+  }
+  const applyProposal = async () => {
+    await next.ev('__editor.getAction("orcaNextEdit.accept").run()')
+    await sleep(300)
+  }
+
+  await scenario('a rename is carried over to the other uses, one at a time, with no model', async () => {
+    await start('const total = 1\nreturn total + total\n', 'total', 'amount')
+    assert.equal((await proposed()).length, 1)
+    assert.equal(await next.ev('!!document.querySelector(".orca-next-edit-old")'), true, 'the old name is struck through')
+    assert.equal((await next.ev('__log.filter(([name]) => name === "edits.predict").length')), 0, 'the model was not asked')
+    await applyProposal()
+    assert.equal(await text(), 'const amount = 1\nreturn amount + total\n')
+    assert.equal((await proposed()).length, 1, 'the next place is offered at once')
+    await applyProposal()
+    assert.equal(await text(), 'const amount = 1\nreturn amount + amount\n')
+    assert.equal((await proposed()).length, 0, 'nothing left to offer')
+  })
+  await scenario('one undo takes back one applied edit', async () => {
+    await next.ev('__editor.trigger("t", "undo", {}); 1')
+    await sleep(300)
+    assert.equal(await text(), 'const amount = 1\nreturn amount + total\n')
+    // Why: the undo is itself a "rename" (amount back to total); offering it would undo the person's undo.
+    await sleep(SETTLE)
+    assert.equal((await proposed()).length, 0, 'nothing is proposed after an undo')
+  })
+  await scenario('a change that came from outside is not an edit to learn from', async () => {
+    await next.ev('__external = true; 1')
+    await start('const total = 1\nreturn total\n', 'total', 'amount')
+    await next.ev('__external = false; 1')
+    assert.equal((await proposed()).length, 0)
+  })
+  await scenario('typing dismisses the proposal', async () => {
+    await start('const total = 1\nreturn total\n', 'total', 'amount')
+    assert.equal((await proposed()).length, 1)
+    await next.ev('__editor.trigger("t", "type", { text: "x" }); 1')
+    await sleep(200)
+    assert.equal((await proposed()).length, 0)
+  })
+  await scenario('the real Tab key applies it and Esc dismisses it', async () => {
+    await start('const total = 1\nreturn total\n', 'total', 'amount')
+    assert.equal((await proposed()).length, 1)
+    for (const type of ['keyDown', 'keyUp']) {
+      await next.send('Input.dispatchKeyEvent', { type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+    }
+    await sleep(300)
+    assert.equal((await proposed()).length, 0, 'Esc dismissed it')
+    assert.equal(await text(), 'const amount = 1\nreturn total\n')
+    await start('const total = 1\nreturn total\n', 'total', 'amount')
+    for (const type of ['keyDown', 'keyUp']) {
+      await next.send('Input.dispatchKeyEvent', { type, key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 })
+    }
+    await sleep(300)
+    assert.equal(await text(), 'const amount = 1\nreturn amount\n', 'Tab applied it')
+  })
+  await scenario('a short name is not carried over, because it says nothing about the other uses', async () => {
+    await start('let id = 1\nreturn id\n', 'id', 'idx')
+    assert.equal((await proposed()).length, 0)
+  })
+
+  const prediction = { line: 2, old: 'return total', new: 'return total + 1' }
+  await scenario('with the setting off the model is never asked', async () => {
+    await start('const n = 1\nreturn total\n', '1', '2', { ai: false, prediction })
+    assert.equal(await next.ev('__log.filter(([name]) => name === "edits.predict").length'), 0)
+    assert.equal((await proposed()).length, 0)
+  })
+  await scenario('with the setting on, the model is told what changed and its edit is proposed in place', async () => {
+    await start('const n = 1\nreturn total\n', '1', '2', { ai: true, prediction })
+    const asked = JSON.parse(await next.ev('JSON.stringify(__log.filter(([name]) => name === "edits.predict").map(([, input]) => input))'))
+    assert.equal(asked.length, 1)
+    assert.deepEqual(asked[0].recent, [{ line: 1, before: 'const n = 1', after: 'const n = 2' }])
+    assert.equal(asked[0].path, 'untitled.ts')
+    assert.deepEqual(await proposed(), [{ text: ' + 1', start: 24, end: 24 }], 'only what differs is proposed')
+    await applyProposal()
+    assert.equal(await text(), 'const n = 2\nreturn total + 1\n')
+  })
+  await scenario('a model edit for a line that is not as it was sent is thrown away', async () => {
+    await start('const n = 1\nreturn total\n', '1', '2', { ai: true, prediction: { line: 2, old: 'return totals', new: 'x' } })
+    assert.equal((await proposed()).length, 0)
+  })
+  next.close()
 
   // The bundle Orca installs (editor/dist, from `npm run build`), loaded the way Orca loads it, over HTTP so
   // module scripts and workers work, with a stand-in for the `orca` object the host injects.

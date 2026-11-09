@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "autocomplete",
   "name": "Autocomplete",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "execution": "trusted-worker",
   "description": "Gray inline suggestions as you type, powered by the AI provider you choose (OpenAI, Anthropic, OpenRouter, Mistral, Ollama or any compatible API), plus snippets, postfix templates and language servers with the AI off.",
   "license": "MIT",
@@ -78,6 +78,13 @@
         "description": "Start the language servers already installed on this computer (such as rust-analyzer, gopls, pyright or typescript-language-server) for errors, hover, go to definition and more in the Autocomplete editor. Needs the file to be inside an Orca workspace.",
         "type": "boolean",
         "default": true
+      },
+      {
+        "key": "nextEdit",
+        "title": "Predict the next edit with AI",
+        "description": "After you change a line and pause, ask your provider whether the same change is needed on another line, and show it for you to accept with Tab. Sends the lines around your change and what you changed, one extra request each time. Needs an OpenAI- or Anthropic-compatible provider. Carrying a rename over to the other uses of a name needs no AI and is always on.",
+        "type": "boolean",
+        "default": false
       },
       {
         "key": "editorFollowOrca",

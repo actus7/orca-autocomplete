@@ -4,9 +4,10 @@
   "type": "module",
   "scripts": {
     "build": "node editor/build.mjs",
-    "test": "node --test src/ editor/ bench/",
+    "test": "node --test \"src/**/*.test.ts\" \"editor/**/*.test.ts\" \"bench/**/*.test.mjs\"",
     "bench": "node bench/run.mjs",
     "test:browser": "node browser-tests/run.mjs",
+    "test:panel": "orca plugin test .",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {

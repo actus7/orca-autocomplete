@@ -625,3 +625,90 @@ test('nothing is said to be sent when the AI is off or cannot ask yet', async ()
   assert.equal((await destinationOf(openaiThere)).destination, 'none', 'a provider that needs a key, without one')
   assert.equal((await destinationOf({ enabled: true, format: 'openai', baseUrl: '', model: '' })).destination, 'none', 'not set up')
 })
+
+// The next edit: off until the person turns it on, chat providers only, spaced out, and silent when it fails.
+const predictInput = {
+  path: 'a.ts',
+  languageId: 'typescript',
+  startLine: 1,
+  text: 'const amount = 1\nreturn total',
+  recent: [{ line: 1, before: 'const total = 1', after: 'const amount = 1' }]
+}
+const proposal = { line: 2, old: 'return total', new: 'return amount' }
+
+function countingFetch(body: unknown): { calls: () => number; restore: () => void } {
+  const real = globalThis.fetch
+  let calls = 0
+  globalThis.fetch = async () => (calls += 1, new Response(JSON.stringify(body)))
+  return { calls: () => calls, restore: () => void (globalThis.fetch = real) }
+}
+const chatAnswer = (content: string) => ({ choices: [{ message: { content } }] })
+
+test('the next edit asks nothing of the provider until the setting is turned on', async () => {
+  const fetchSpy = countingFetch(chatAnswer(JSON.stringify(proposal)))
+  try {
+    const worker = await mountWorker()
+    assert.deepEqual(await worker.request('edits.predict', predictInput), { edit: null })
+    assert.equal(fetchSpy.calls(), 0)
+  } finally {
+    fetchSpy.restore()
+  }
+})
+
+test('with the setting on, a chat provider gives an edit that holds up', async () => {
+  const fetchSpy = countingFetch(chatAnswer(JSON.stringify(proposal)))
+  try {
+    const worker = await mountWorker({ ...baseSettings, nextEdit: true })
+    assert.deepEqual(await worker.request('edits.predict', predictInput), { edit: proposal })
+    assert.equal(fetchSpy.calls(), 1)
+  } finally {
+    fetchSpy.restore()
+  }
+})
+
+test('the next edit is not asked of a provider that only fills in the middle', async () => {
+  const fetchSpy = countingFetch({ response: JSON.stringify(proposal) })
+  try {
+    const worker = await mountWorker({ ...baseSettings, format: 'ollama', nextEdit: true })
+    assert.deepEqual(await worker.request('edits.predict', predictInput), { edit: null })
+    assert.equal(fetchSpy.calls(), 0)
+  } finally {
+    fetchSpy.restore()
+  }
+})
+
+test('asks are spaced out, so a burst of edits costs one request, not one per pause', async () => {
+  const fetchSpy = countingFetch(chatAnswer(JSON.stringify(proposal)))
+  try {
+    const worker = await mountWorker({ ...baseSettings, nextEdit: true })
+    await worker.request('edits.predict', predictInput)
+    assert.deepEqual(await worker.request('edits.predict', predictInput), { edit: null })
+    assert.equal(fetchSpy.calls(), 1)
+  } finally {
+    fetchSpy.restore()
+  }
+})
+
+test('a request that is not the shape it promises is turned away before anything is asked or logged', async () => {
+  const fetchSpy = countingFetch(chatAnswer(JSON.stringify(proposal)))
+  try {
+    const worker = await mountWorker({ ...baseSettings, nextEdit: true })
+    assert.deepEqual(await worker.request('edits.predict', { ...predictInput, text: 7 }), { edit: null })
+    assert.equal(fetchSpy.calls(), 0)
+    assert.equal(worker.logs.length, 0)
+  } finally {
+    fetchSpy.restore()
+  }
+})
+
+test('a failing provider gives no edit, no error to the editor, and one line in the log', async () => {
+  const real = globalThis.fetch
+  globalThis.fetch = async () => new Response('{}', { status: 500 })
+  try {
+    const worker = await mountWorker({ ...baseSettings, nextEdit: true })
+    assert.deepEqual(await worker.request('edits.predict', predictInput), { edit: null })
+    assert.ok(worker.logs.some((line) => line.includes('next edit failed')), 'the failure is in the log')
+  } finally {
+    globalThis.fetch = real
+  }
+})

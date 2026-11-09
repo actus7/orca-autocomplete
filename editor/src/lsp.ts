@@ -19,6 +19,7 @@ import {
   type LspTextEdit
 } from './lsp-convert.ts'
 import { showServerBadge } from './lsp-badge.ts'
+import { say } from './strings.ts'
 import { sameUri } from '../../src/lsp/uri.ts'
 
 type Capabilities = Record<string, any> // the server's own JSON
@@ -276,7 +277,7 @@ export async function startLanguageServer(
         const split = splitWorkspaceEdit(await ask('textDocument/rename', { ...atCursor(position), newName }), documentUri)
         if (split.otherFiles > 0) {
           // Why refuse: a half-applied rename that skips other files would break the project.
-          return { edits: [], rejectReason: `Renaming this would also change ${split.otherFiles} other file(s), which this editor cannot apply yet.` }
+          return { edits: [], rejectReason: say('rename.otherFiles', { count: split.otherFiles }) }
         }
         return { edits: split.own.map((textEdit) => ({ resource: model.uri, textEdit, versionId: undefined })) }
       },
@@ -285,12 +286,12 @@ export async function startLanguageServer(
           const word = m.getWordAtPosition(position)
           return word
             ? { range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn), text: word.word }
-            : { range: new monaco.Range(1, 1, 1, 1), text: '', rejectReason: 'Nothing to rename here.' }
+            : { range: new monaco.Range(1, 1, 1, 1), text: '', rejectReason: say('rename.nothing') }
         }
         const result = await ask('textDocument/prepareRename', atCursor(position))
         const range = result?.range ?? result
         if (!range?.start) {
-          return { range: new monaco.Range(1, 1, 1, 1), text: '', rejectReason: 'This cannot be renamed.' }
+          return { range: new monaco.Range(1, 1, 1, 1), text: '', rejectReason: say('rename.cannot') }
         }
         const monacoRange = fromLspRange(range)
         return { range: monacoRange, text: result.placeholder ?? m.getValueInRange(monacoRange) }

@@ -7,6 +7,7 @@ import {
   env,
   Heading,
   Input,
+  KeyValue,
   plugin,
   Progress,
   read,
@@ -14,6 +15,7 @@ import {
   Select,
   set,
   settings,
+  Skeleton,
   Spinner,
   Stack,
   storage,
@@ -26,6 +28,7 @@ import {
   type StatusSnapshot
 } from 'orca'
 import { parseFormat } from './complete.ts'
+import { errorMessage, hostOf } from './explain.ts'
 import { pickLocale, translator } from './i18n.ts'
 import {
   BENCH_BATCH_SIZE,
@@ -40,10 +43,12 @@ import {
   type Speeds
 } from './models.ts'
 import { PRESETS, presetById, presetFor, type PresetId } from './presets.ts'
+import { REQUEST_TIMEOUT_MS, STATE_TONES } from './status.ts'
 
 const tr = translator(pickLocale(env.locale))
-const SLOW_SECONDS = 1.8
-const TONES = { on: 'success', off: 'neutral', setup: 'warning', error: 'danger', slow: 'warning' } as const
+const SLOW_SECONDS = REQUEST_TIMEOUT_MS / 1000
+// How long "Clear statistics" stays armed after the first press, before it goes back to asking.
+const RESET_CONFIRM_MS = 4000
 
 type Outcome = { ok: boolean; message: string; ms: number | null }
 
@@ -66,16 +71,11 @@ const speeds = atom<Speeds>({})
 const usage = atom<Speeds>({})
 const typeOpen = atom(false)
 const bench = atom<{ done: number; total: number } | null>(null)
+// Why the panel could not load, when the worker did not answer; without it the panel would just look empty.
+const loadError = atom<string | null>(null)
+const confirmingReset = atom(false)
 let modelsRun = 0
 let benchRun = 0
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host
-  } catch {
-    return ''
-  }
-}
 
 async function loadSettings(): Promise<void> {
   const saved = await settings.get()
@@ -111,7 +111,7 @@ async function loadModels(): Promise<void> {
   } catch (error) {
     if (run === modelsRun) {
       set(modelsPhase, 'failed')
-      set(modelsMessage, error instanceof Error ? error.message : String(error))
+      set(modelsMessage, errorMessage(error))
     }
   }
 }
@@ -140,7 +140,14 @@ async function loadStats(): Promise<void> {
   set(stats, await plugin.request('stats.get', {}))
 }
 
+/** Clearing cannot be taken back, so the first press only arms the button and the second one clears. */
 async function resetStats(): Promise<void> {
+  if (!read(confirmingReset)) {
+    set(confirmingReset, true)
+    setTimeout(() => set(confirmingReset, false), RESET_CONFIRM_MS)
+    return
+  }
+  set(confirmingReset, false)
   await plugin.request('stats.reset', {})
   await loadStats()
 }
@@ -188,7 +195,7 @@ export function setup(ctx: PanelContext): void {
     if (canLoadModels(snapshot.hasKey)) {
       await loadModels()
     }
-  })().catch(() => undefined)
+  })().catch((error: unknown) => set(loadError, errorMessage(error)))
   ctx.subscriptions.push(
     plugin.on('status.changed', (snapshot) => {
       set(status, snapshot)
@@ -246,7 +253,7 @@ async function saveAndTest(): Promise<void> {
       void loadModels()
     }
   } catch (error) {
-    set(outcome, { ok: false, message: error instanceof Error ? error.message : String(error), ms: null })
+    set(outcome, { ok: false, message: errorMessage(error), ms: null })
   } finally {
     set(testing, false)
   }
@@ -260,6 +267,14 @@ function seconds(ms: number): string {
 function Notice() {
   const result = read(outcome)
   const current = read(status)
+  const failed = read(loadError)
+  if (failed !== null && !current) {
+    return (
+      <Callout tone="danger" icon="error" title={tr('load.failed')}>
+        {failed}
+      </Callout>
+    )
+  }
   if (result) {
     return result.ok ? (
       <Callout tone="success" icon="check" title={tr('test.ok.title')}>
@@ -566,27 +581,43 @@ function percent(part: number, whole: number): string {
   return whole > 0 ? `${Math.round((part / whole) * 100)}%` : '–'
 }
 
+/** A day in the person's own way of writing dates. */
+function day(ms: number): string {
+  try {
+    return new Date(ms).toLocaleDateString(env.locale, { dateStyle: 'medium' })
+  } catch {
+    // Why: a language tag this runtime does not know must not take the panel down.
+    return new Date(ms).toISOString().slice(0, 10)
+  }
+}
+
 /** How the model in use has done in real use. Counted on this computer only. */
 function Statistics() {
   const data = read(stats)
   const s = data?.summary
   const hasData = s !== undefined && s.shown + s.accepted + s.partial + s.stale + s.samples > 0
+  const confirming = read(confirmingReset)
   return (
     <Collapsible title={tr('stats.title')}>
       <Stack gap="xs">
         {hasData && s && data ? (
           <Stack gap="xs">
-            <Text size="sm">{tr('stats.shown', { count: s.shown })}</Text>
-            <Text size="sm">{tr('stats.accepted', { count: s.accepted, percent: percent(s.accepted, s.shown) })}</Text>
-            <Text size="sm">{tr('stats.partial', { count: s.partial })}</Text>
-            <Text size="sm">{tr('stats.kept', { count: s.kept, percent: percent(s.kept, s.accepted) })}</Text>
-            <Text size="sm">{tr('stats.undone', { count: s.undone })}</Text>
-            <Text size="sm">{tr('stats.stale', { count: s.stale })}</Text>
-            {s.p50 !== null && s.p95 !== null ? <Text size="sm">{tr('stats.latency', { p50: s.p50, p95: s.p95 })}</Text> : null}
-            <Text muted size="sm">{tr('stats.since', { date: new Date(data.since).toISOString().slice(0, 10) })}</Text>
+            <KeyValue
+              label={tr('stats.title')}
+              items={[
+                { label: tr('stats.shown'), value: s.shown },
+                { label: tr('stats.accepted'), value: tr('stats.ofShown', { count: s.accepted, percent: percent(s.accepted, s.shown) }) },
+                { label: tr('stats.partial'), value: s.partial },
+                { label: tr('stats.kept'), value: tr('stats.ofAccepted', { count: s.kept, percent: percent(s.kept, s.accepted) }) },
+                { label: tr('stats.undone'), value: s.undone },
+                { label: tr('stats.stale'), value: s.stale },
+                ...(s.p50 !== null && s.p95 !== null ? [{ label: tr('stats.latency'), value: tr('stats.latencyValue', { p50: s.p50, p95: s.p95 }) }] : [])
+              ]}
+            />
+            <Text muted size="sm">{tr('stats.since', { date: day(data.since) })}</Text>
             <Row>
-              <Button variant="ghost" size="sm" icon="refresh" onPress={() => void resetStats()}>
-                {tr('stats.reset')}
+              <Button variant="ghost" size="sm" icon="delete" tone={confirming ? 'danger' : 'neutral'} onPress={() => void resetStats()}>
+                {tr(confirming ? 'stats.resetConfirm' : 'stats.reset')}
               </Button>
             </Row>
           </Stack>
@@ -604,7 +635,9 @@ function Help() {
       <Stack gap="sm">
         <Text size="sm">{tr('help.pause')}</Text>
         <Text size="sm">{tr('help.accept')}</Text>
+        <Text size="sm">{tr('help.partial')}</Text>
         <Text size="sm">{tr('help.bar')}</Text>
+        <Text size="sm">{tr('help.offline')}</Text>
         <Text size="sm" muted>{tr('help.privacy')}</Text>
       </Stack>
     </Collapsible>
@@ -625,9 +658,13 @@ export default function Panel() {
     <Stack gap="md">
       <Row justify="between" align="center">
         <Heading>{tr('title')}</Heading>
-        {state ? <Badge tone={TONES[state]}>{tr(`state.${state}`)}</Badge> : null}
+        {state ? <Badge tone={STATE_TONES[state]}>{tr(`state.${state}`)}</Badge> : null}
       </Row>
-      {current ? <Text muted size="sm">{tr(`dest.${current.destination}`, { host: current.host })}</Text> : null}
+      {current ? (
+        <Text muted size="sm">{tr(`dest.${current.destination}`, { host: current.host })}</Text>
+      ) : read(loadError) === null ? (
+        <Skeleton shape="text" lines={1} label={tr('loading')} />
+      ) : null}
       <Switch
         label={tr('switch')}
         checked={read(enabled)}

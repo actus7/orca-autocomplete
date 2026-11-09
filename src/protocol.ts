@@ -86,6 +86,15 @@ declare module 'orca' {
       input: { path: string; languageId: string; prefix: string; suffix: string }
       output: { suggestion: string; id: number }
     }
+    /**
+     * The next edit, asked of the model after the person changed something: replace the whole line `line`, which
+     * is `old`, with `new`. Null when the setting is off, the provider cannot be asked this way, or the model had
+     * nothing to propose that holds up. The editor shows it and the person decides.
+     */
+    'edits.predict': {
+      input: { path: string; languageId: string; startLine: number; text: string; recent: { line: number; before: string; after: string }[] }
+      output: { edit: { line: number; old: string; new: string } | null }
+    }
     /** What became of a suggestion the editor showed. Kept on this computer only, for the statistics in the panel. */
     'metrics.event': {
       input: { id: number; kind: 'shown' | 'accepted' | 'partial' | 'kept' | 'undone' | 'stale' }

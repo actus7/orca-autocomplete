@@ -27,6 +27,7 @@
   ],
   "exclude": [
     "**/*.test.ts",
+    "**/*.test.tsx",
     "src/lsp/fixtures/**",
     "src/panel.check.ts",
     "editor/src/languages.generated.ts"

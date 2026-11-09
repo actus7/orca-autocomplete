@@ -2,11 +2,26 @@
 import { ProviderHttpError, type ProviderFormat } from './complete.ts'
 import type { Translate } from './i18n.ts'
 
-const LOCAL_HOST = /^(localhost|127\.|\[?::1)/i
+// Why whole names: `localhost.example.com` and `127.0.0.1.nip.io` start like this computer and are not it.
+const LOOPBACK_NAME = /^(localhost|[\w-]+(\.[\w-]+)*\.localhost|127(\.\d{1,3}){3}|\[::1\])$/i
 
 /** Whether a host (with or without a port) is this computer itself. A server elsewhere on the network is not. */
 export function isLoopbackHost(host: string): boolean {
-  return LOCAL_HOST.test(host)
+  return LOOPBACK_NAME.test(host.replace(/:\d+$/, ''))
+}
+
+/** The host (and port) of an address, or '' when it is not one. */
+export function hostOf(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return ''
+  }
+}
+
+/** What went wrong, as text, whatever was thrown. */
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 export function explainFailure(error: unknown, t: Translate, host: string, timeoutMs: number, format?: ProviderFormat): string {
@@ -33,7 +48,7 @@ export function explainFailure(error: unknown, t: Translate, host: string, timeo
   }
   // Why: fetch reports every connection problem as a TypeError ("fetch failed").
   if (error instanceof TypeError) {
-    return t(LOCAL_HOST.test(host) ? 'err.networkLocal' : 'err.network', { host })
+    return t(isLoopbackHost(host) ? 'err.networkLocal' : 'err.network', { host })
   }
-  return error instanceof Error ? error.message : String(error)
+  return errorMessage(error)
 }

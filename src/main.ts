@@ -1,11 +1,13 @@
 import type { Activate, OrcaWorkerApi } from 'orca/worker'
 import { complete, parseFormat, type CompletionContext, type Provider, type ProviderFormat } from './complete.ts'
-import { explainFailure, isLoopbackHost } from './explain.ts'
+import { asPredictInput, predictEdit } from './nextedit.ts'
+import { errorMessage, explainFailure, hostOf, isLoopbackHost } from './explain.ts'
 import { pickLocale, translator, type Translate } from './i18n.ts'
 import { LspManager } from './lsp/manager.ts'
 import { EditorSettingsWatcher } from './orca-editor/watcher.ts'
 import { BENCH_BATCH_SIZE, isExpectedAnswer, listModels, median } from './models.ts'
 import { presetFor, sameAddress } from './presets.ts'
+import { REQUEST_TIMEOUT_MS, STATE_TONES, type State } from './status.ts'
 import { bump, emptyStats, EVENT_KINDS, isStats, summarize, withLatency, type Stats as Metrics } from './metrics.ts'
 
 const SECRET_KEY = 'apiKey'
@@ -13,10 +15,11 @@ const LOCALE_KEY = 'locale'
 // The address the saved key belongs to: a key is never used for any other provider.
 const KEY_ADDRESS = 'keyAddress'
 const STATUS_ITEM = 'status'
-// Why: a suggestion that arrives later than this comes after the person has moved on, so stop waiting.
-// The panel shows the same number as its "fast enough" limit (SLOW_SECONDS in src/panel.tsx).
-const REQUEST_TIMEOUT_MS = 1800
 const CACHE_SIZE = 50
+// The next edit is not typed over, so it can take a little longer than a suggestion; but it costs a request
+// each time, so asks are spaced out.
+const NEXT_EDIT_TIMEOUT_MS = 4000
+const NEXT_EDIT_MIN_GAP_MS = 1500
 const TEST_TIMEOUT_MS = 15_000
 const MODELS_TIMEOUT_MS = 10_000
 // Why: a model slower than REQUEST_TIMEOUT_MS is still worth showing, so the person sees how slow it is.
@@ -63,14 +66,9 @@ type Stats = {
   lastError: string | null
   lastSlow: boolean
 }
-type State = 'on' | 'off' | 'setup' | 'error' | 'slow'
-
-const TONES = { on: 'success', off: 'neutral', setup: 'warning', error: 'danger', slow: 'warning' } as const
-
 /** The saved key, but only for the provider it was saved for. */
 async function savedKey(orca: OrcaWorkerApi, baseUrl: string): Promise<string> {
-  const key = (await orca.secrets.get(SECRET_KEY)) ?? ''
-  const pinned = await orca.storage.get(KEY_ADDRESS)
+  const [key, pinned] = await Promise.all([orca.secrets.get(SECRET_KEY).then((value) => value ?? ''), orca.storage.get(KEY_ADDRESS)])
   const foreign = typeof pinned === 'string' && pinned !== '' && !sameAddress(pinned, baseUrl)
   return key && !foreign ? key : ''
 }
@@ -95,14 +93,6 @@ async function readConfig(orca: OrcaWorkerApi): Promise<Config | null> {
   }
 }
 
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host
-  } catch {
-    return ''
-  }
-}
-
 function keyMissing(config: Config): boolean {
   return presetFor(config.provider.format, config.provider.baseUrl).keyKind === 'required' && !config.provider.apiKey
 }
@@ -112,7 +102,7 @@ function destinationOf(config: Config | null): 'none' | 'local' | 'remote' {
   if (!config || !config.enabled || keyMissing(config)) {
     return 'none'
   }
-  return isLoopbackHost(new URL(config.provider.baseUrl).host) ? 'local' : 'remote'
+  return isLoopbackHost(hostOf(config.provider.baseUrl)) ? 'local' : 'remote'
 }
 
 function stateOf(config: Config | null, stats: Stats): State {
@@ -132,7 +122,7 @@ function stateOf(config: Config | null, stats: Stats): State {
 }
 
 function tooltipOf(state: State, config: Config | null, stats: Stats, t: Translate): string {
-  const where = config ? `${new URL(config.provider.baseUrl).host} · ${config.provider.model}` : ''
+  const where = config ? `${hostOf(config.provider.baseUrl)} · ${config.provider.model}` : ''
   const seconds = REQUEST_TIMEOUT_MS / 1000
   switch (state) {
     case 'setup':
@@ -191,18 +181,19 @@ const activate: Activate = (orca) => {
     orca.log(`completion failed: ${message}`)
   }
 
-  async function snapshot() {
-    const config = await readConfig(orca)
+  async function snapshot(known?: Config | null) {
+    const config = known === undefined ? await readConfig(orca) : known
     const state = stateOf(config, stats)
     return {
       state,
       lastMs: stats.lastMs,
       suggested: stats.suggested,
       reason: stats.lastError,
-      host: config ? new URL(config.provider.baseUrl).host : '',
+      host: config ? hostOf(config.provider.baseUrl) : '',
       model: config?.provider.model ?? '',
       destination: destinationOf(config),
-      hasKey: Boolean(await savedKey(orca, String((await orca.settings.get('baseUrl')) ?? '')))
+      // Why not just the config's key: with no model chosen yet there is no config, and a key may still be saved.
+      hasKey: Boolean(config ? config.provider.apiKey : await savedKey(orca, String((await orca.settings.get('baseUrl')) ?? '')))
     }
   }
 
@@ -249,7 +240,7 @@ const activate: Activate = (orca) => {
   }
 
   async function refreshStatus(): Promise<void> {
-    const [config, t] = [await readConfig(orca), await translate()]
+    const [config, t] = await Promise.all([readConfig(orca), translate()])
     const state = stateOf(config, stats)
     const text =
       state === 'on' && stats.lastMs !== null
@@ -260,15 +251,15 @@ const activate: Activate = (orca) => {
     try {
       await orca.host.call('statusBar.update', {
         id: STATUS_ITEM,
-        tone: TONES[state],
+        tone: STATE_TONES[state],
         text,
         tooltip: tooltipOf(state, config, stats, t)
       })
     } catch (error) {
       // Why: an Orca without status bar support must not break completion.
-      orca.log(`status bar update failed: ${error instanceof Error ? error.message : String(error)}`)
+      orca.log(`status bar update failed: ${errorMessage(error)}`)
     }
-    orca.panels.post('status.changed', await snapshot())
+    orca.panels.post('status.changed', await snapshot(config))
   }
 
   /**
@@ -291,7 +282,7 @@ const activate: Activate = (orca) => {
   }
 
   async function runTest(): Promise<{ ok: boolean; message: string; ms: number | null }> {
-    const [config, t] = [await readConfig(orca), await translate()]
+    const [config, t] = await Promise.all([readConfig(orca), translate()])
     if (!config) {
       return { ok: false, message: t('test.needsSetup'), ms: null }
     }
@@ -303,7 +294,7 @@ const activate: Activate = (orca) => {
       await complete(config.provider, TEST_EVENT, AbortSignal.timeout(TEST_TIMEOUT_MS))
       return { ok: true, message: '', ms: Date.now() - startedAt }
     } catch (error) {
-      const host = new URL(config.provider.baseUrl).host
+      const host = hostOf(config.provider.baseUrl)
       return { ok: false, message: explainFailure(error, t, host, TEST_TIMEOUT_MS, config.provider.format), ms: null }
     }
   }
@@ -359,8 +350,8 @@ const activate: Activate = (orca) => {
         // A newer keystroke asked again, so this answer was never going to be shown.
         updateStats((metrics) => bump(metrics, model, 'stale'))
       } else {
-        logFailure(error instanceof Error ? error.message : String(error))
-        const host = new URL(config.provider.baseUrl).host
+        logFailure(errorMessage(error))
+        const host = hostOf(config.provider.baseUrl)
         stats.lastError = explainFailure(error, await translate(), host, REQUEST_TIMEOUT_MS, config.provider.format).slice(
           0,
           ERROR_TEXT_CHARS
@@ -386,7 +377,7 @@ const activate: Activate = (orca) => {
       const { workspaces } = await orca.host.call('workspace.list', {})
       roots = { at: Date.now(), paths: workspaces.filter((w) => isLocalHost(w.hostId)).map((w) => w.path) }
     } catch (error) {
-      orca.log(`workspace list unavailable: ${error instanceof Error ? error.message : String(error)}`)
+      orca.log(`workspace list unavailable: ${errorMessage(error)}`)
       roots = { at: Date.now(), paths: [] }
     }
     return roots.paths
@@ -413,7 +404,7 @@ const activate: Activate = (orca) => {
     try {
       return { result: await lsp.request(docId, method, params) }
     } catch (error) {
-      return { result: null, error: error instanceof Error ? error.message : String(error) }
+      return { result: null, error: errorMessage(error) }
     }
   })
   orca.panels.handle('lsp.detach', async ({ docId }) => {
@@ -435,6 +426,41 @@ const activate: Activate = (orca) => {
   orca.panels.handle('completion.ask', async (context) => {
     const { text, model } = await suggest(context)
     return { suggestion: text, id: text ? remember(model) : 0 }
+  })
+
+  // The next edit, asked of the model only when the person turned it on and the provider is a chat one. It
+  // sits apart from suggestions: it never touches their statistics, latency or status, and a failure is silent.
+  let nextEditAbort: AbortController | null = null
+  let nextEditAskedAt = 0
+  orca.panels.handle('edits.predict', async (raw) => {
+    const none = { edit: null }
+    const input = asPredictInput(raw)
+    if (!input || (await orca.settings.get('nextEdit')) !== true || Date.now() - nextEditAskedAt < NEXT_EDIT_MIN_GAP_MS) {
+      return none
+    }
+    const config = await readConfig(orca)
+    // Why no format check here: predictEdit answers nothing for a provider that only fills in the middle.
+    if (!config?.enabled || keyMissing(config)) {
+      return none
+    }
+    nextEditAskedAt = Date.now()
+    nextEditAbort?.abort()
+    const controller = new AbortController()
+    nextEditAbort = controller
+    try {
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(NEXT_EDIT_TIMEOUT_MS)])
+      return { edit: await predictEdit(config.provider, input, signal) }
+    } catch (error) {
+      // A newer ask or a slow answer is expected; anything else is worth a line in the log.
+      if (!controller.signal.aborted && !(error instanceof Error && error.name === 'TimeoutError')) {
+        logFailure(`next edit failed: ${errorMessage(error)}`)
+      }
+      return none
+    } finally {
+      if (nextEditAbort === controller) {
+        nextEditAbort = null
+      }
+    }
   })
 
   orca.panels.handle('metrics.event', async ({ id, kind }) => {
@@ -461,7 +487,7 @@ const activate: Activate = (orca) => {
     return {}
   })
 
-  orca.panels.handle('status.get', snapshot)
+  orca.panels.handle('status.get', () => snapshot())
 
   orca.panels.handle('key.set', async ({ key }) => {
     const trimmed = key.trim()

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ProviderHttpError } from './complete.ts'
-import { explainFailure } from './explain.ts'
+import { explainFailure, isLoopbackHost } from './explain.ts'
 import { KEYS, pickLocale, translate, translator } from './i18n.ts'
 import { presetFor } from './presets.ts'
 
@@ -57,6 +57,16 @@ test('explainFailure says what to do for each kind of failure', () => {
   assert.match(explain(new TypeError('fetch failed')), /Could not reach api\.example\.com\. Check/)
   assert.match(explain(new TypeError('fetch failed'), 'localhost:11434'), /Is the server running/)
   assert.equal(explain(new Error('odd')), 'odd')
+})
+
+// Why: the panel says "your code does not leave this computer" for a loopback host, so a look-alike must not pass.
+test('only this computer counts as a loopback host, not a name or address that merely starts like one', () => {
+  for (const host of ['localhost', 'localhost:11434', 'LOCALHOST:8080', 'api.localhost:1234', '127.0.0.1', '127.0.0.1:11434', '127.8.9.10', '[::1]', '[::1]:11434']) {
+    assert.equal(isLoopbackHost(host), true, host)
+  }
+  for (const host of ['localhost.example.com', '127.0.0.1.nip.io', '127.example.com:443', 'mylocalhost', '192.168.0.10:11434', 'api.openai.com', '']) {
+    assert.equal(isLoopbackHost(host), false, host)
+  }
 })
 
 test('presetFor keeps a changed address of Ollama or Mistral on its own format instead of falling back to OpenAI', () => {

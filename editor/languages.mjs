@@ -87,14 +87,17 @@ export function customEditors() {
 /** The HTML page of one language: it names the language, then loads the shared bundle. */
 export function pageFor(language) {
   return `<!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
     <title>${language.title}</title>
     <link rel="stylesheet" href="../dist/main.css" />
     <style>
       html, body, #root { height: 100%; margin: 0; overflow: hidden; }
       body { background: var(--orca-background); color: var(--orca-foreground); }
+      .start-failed { display: flex; flex-direction: column; gap: 6px; max-width: 60ch; margin: 0 auto; padding: 48px 24px; font: 13px/1.5 system-ui, sans-serif; }
+      .start-failed span { color: var(--orca-muted-foreground); overflow-wrap: anywhere; }
     </style>
   </head>
   <body>

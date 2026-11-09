@@ -6,6 +6,7 @@ import { trackAcceptance, type TrackedModel } from './acceptance.ts'
 import { contextAround } from './edits.ts'
 import { Pacer } from './pacing.ts'
 import { remainder, type Offered } from './reuse.ts'
+import { say } from './strings.ts'
 
 // The same limits Orca's own editor uses for its hook, so both paths see the same amount of code.
 const PREFIX_MAX_CHARS = 32 * 1024
@@ -96,12 +97,10 @@ export function registerInlineAi(
         return { items: [] }
       }
       const version = model.getVersionId()
-      const { prefix, suffix } = contextAround(
-        model.getValue(),
-        model.getOffsetAt(position),
-        PREFIX_MAX_CHARS,
-        SUFFIX_MAX_CHARS
-      )
+      // Why only this window: reading the whole of a large file for every suggestion would copy megabytes to use kilobytes.
+      const windowStart = Math.max(0, cursor - PREFIX_MAX_CHARS)
+      const around = model.getValueInRange(monaco.Range.fromPositions(model.getPositionAt(windowStart), model.getPositionAt(cursor + SUFFIX_MAX_CHARS)))
+      const { prefix, suffix } = contextAround(around, cursor - windowStart, PREFIX_MAX_CHARS, SUFFIX_MAX_CHARS)
       let answer
       try {
         answer = await orca.plugin.request('completion.ask', { path: filePath(), languageId: model.getLanguageId(), prefix, suffix })
@@ -141,7 +140,7 @@ export function registerInlineAi(
   // Monaco takes a suggestion a word at a time with Ctrl+Right and has a command for a line, but no key for it.
   const acceptLine = editor.addAction({
     id: 'orcaAutocomplete.acceptLine',
-    label: 'Autocomplete: accept the next line of the suggestion',
+    label: say('ghost.acceptLine'),
     keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.RightArrow],
     precondition: 'inlineSuggestionVisible',
     run: () => {

@@ -109,21 +109,32 @@ const bearer = (apiKey: string): Record<string, string> => (apiKey ? { authoriza
 // The chat formats send none: current Claude and OpenAI reasoning models reject it with HTTP 400.
 const FIM_TEMPERATURE = 0.2
 
+/** A chat request in the OpenAI or the Anthropic format (the other formats are not chat): a system message and a user message. */
+export function buildChatRequest(provider: Provider, system: string, user: string, maxTokens: number): Built {
+  if (provider.format === 'anthropic') {
+    return post(
+      joinUrl(withV1(provider.baseUrl), '/messages'),
+      { 'anthropic-version': ANTHROPIC_VERSION, ...(provider.apiKey ? { 'x-api-key': provider.apiKey } : {}) },
+      { model: provider.model, max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] }
+    )
+  }
+  return post(joinUrl(provider.baseUrl, '/chat/completions'), bearer(provider.apiKey), {
+    model: provider.model,
+    max_tokens: maxTokens,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user }
+    ]
+  })
+}
+
+/** Whether a provider is asked as a chat, which is what the next-edit request needs. */
+export const isChatFormat = (format: ProviderFormat): boolean => format === 'openai' || format === 'anthropic'
+
 export function buildRequest(provider: Provider, ctx: CompletionContext): Built {
   const maxTokens = isProse(ctx.languageId) ? Math.min(provider.maxTokens, PROSE_MAX_TOKENS) : provider.maxTokens
   const { prefix, suffix } = windowOf(ctx)
   switch (provider.format) {
-    case 'anthropic':
-      return post(
-        joinUrl(withV1(provider.baseUrl), '/messages'),
-        { 'anthropic-version': ANTHROPIC_VERSION, ...(provider.apiKey ? { 'x-api-key': provider.apiKey } : {}) },
-        {
-          model: provider.model,
-          max_tokens: maxTokens,
-          system: isProse(ctx.languageId) ? PROSE_SYSTEM_PROMPT : SYSTEM_PROMPT,
-          messages: [{ role: 'user', content: buildUserPrompt(ctx) }]
-        }
-      )
     case 'ollama':
       // Why `stream: false`: Ollama streams by default, and one JSON answer is what is read here.
       return post(joinUrl(withoutV1(provider.baseUrl), '/api/generate'), bearer(provider.apiKey), {
@@ -143,14 +154,7 @@ export function buildRequest(provider: Provider, ctx: CompletionContext): Built 
         stream: false
       })
     default:
-      return post(joinUrl(provider.baseUrl, '/chat/completions'), bearer(provider.apiKey), {
-        model: provider.model,
-        max_tokens: maxTokens,
-        messages: [
-          { role: 'system', content: isProse(ctx.languageId) ? PROSE_SYSTEM_PROMPT : SYSTEM_PROMPT },
-          { role: 'user', content: buildUserPrompt(ctx) }
-        ]
-      })
+      return buildChatRequest(provider, isProse(ctx.languageId) ? PROSE_SYSTEM_PROMPT : SYSTEM_PROMPT, buildUserPrompt(ctx), maxTokens)
   }
 }
 
