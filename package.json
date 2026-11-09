@@ -1,0 +1,6 @@
+{
+  "name": "orca-autocomplete",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test src/complete.test.ts" }
+}

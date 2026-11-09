@@ -1,0 +1,69 @@
+{
+  "manifestVersion": 2,
+  "id": "autocomplete",
+  "name": "Autocomplete",
+  "version": "0.1.0",
+  "execution": "trusted-worker",
+  "description": "Inline AI code completion (ghost text) in Orca's editor, using any OpenAI-compatible or Anthropic-compatible provider you choose.",
+  "license": "MIT",
+  "repository": "https://github.com/actus7/orca-autocomplete",
+  "engines": {
+    "orca": ">=1.4.255"
+  },
+  "main": "src/main.ts",
+  "contributes": {
+    "hooks": [{ "event": "editor.inlineCompletion" }],
+    "panels": [
+      {
+        "id": "setup",
+        "title": "Autocomplete",
+        "icon": "zap",
+        "entry": "src/panel.tsx",
+        "ui": "components"
+      }
+    ],
+    "settings": [
+      {
+        "key": "enabled",
+        "title": "Enabled",
+        "description": "Turn inline completion on or off.",
+        "type": "boolean",
+        "default": true
+      },
+      {
+        "key": "format",
+        "title": "Provider format",
+        "description": "API style the base URL speaks.",
+        "type": "string",
+        "enum": ["openai", "anthropic"],
+        "enumLabels": ["OpenAI-compatible (/chat/completions)", "Anthropic-compatible (/v1/messages)"],
+        "default": "openai"
+      },
+      {
+        "key": "baseUrl",
+        "title": "Base URL",
+        "description": "OpenAI style: the root holding /chat/completions, usually ending in /v1. Anthropic style: the host, e.g. https://api.anthropic.com.",
+        "type": "string",
+        "default": "https://api.openai.com/v1",
+        "placeholder": "http://localhost:11434/v1"
+      },
+      {
+        "key": "model",
+        "title": "Model",
+        "description": "A fast model works best: Orca drops answers slower than about 2 seconds.",
+        "type": "string",
+        "default": "gpt-4o-mini"
+      },
+      {
+        "key": "maxTokens",
+        "title": "Max tokens",
+        "description": "Longest completion to request.",
+        "type": "integer",
+        "default": 96,
+        "minimum": 16,
+        "maximum": 512
+      }
+    ]
+  },
+  "capabilities": [{ "kind": "settings:own" }, { "kind": "secrets:own" }]
+}
