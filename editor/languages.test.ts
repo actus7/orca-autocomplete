@@ -6,6 +6,9 @@ import { GENERIC, GRAMMARS, LANGUAGES, PAGES, customEditors } from './languages.
 // Orca's manifest limits for custom editors.
 const MAX_EDITORS = 16
 const MAX_EXTENSIONS_PER_EDITOR = 32
+// The catalog lists an editor with its extensions as one text of at most this many characters; a
+// longer one makes the whole listing entry mismatch the manifest.
+const MAX_LISTING_DETAIL_CHARS = 160
 
 const manifest = JSON.parse(readFileSync(new URL('../orca-plugin.json', import.meta.url), 'utf8'))
 
@@ -13,6 +16,13 @@ test('the plugin stays within Orca limits for custom editors', () => {
   assert.ok(PAGES.length <= MAX_EDITORS, `${PAGES.length} editors`)
   for (const page of PAGES) {
     assert.ok(page.extensions.length <= MAX_EXTENSIONS_PER_EDITOR, `${page.id}: ${page.extensions.length} extensions`)
+  }
+})
+
+test('the listing text of every editor fits the catalog limit', () => {
+  for (const page of PAGES) {
+    const detail = [...page.extensions, ...(page.filenames ?? [])].join(', ')
+    assert.ok(detail.length <= MAX_LISTING_DETAIL_CHARS, `${page.id}: ${detail.length} characters`)
   }
 })
 

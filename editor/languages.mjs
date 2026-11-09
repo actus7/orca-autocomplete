@@ -41,17 +41,17 @@ export const GENERIC_LANGUAGES = [
   { id: 'dart', title: 'Dart', dir: 'dart', extensions: ['.dart'] },
   { id: 'lua', title: 'Lua', dir: 'lua', extensions: ['.lua'] },
   { id: 'r', title: 'R', dir: 'r', extensions: ['.r'] },
-  { id: 'powershell', title: 'PowerShell', dir: 'powershell', extensions: ['.ps1', '.psm1'] },
+  { id: 'powershell', title: 'PowerShell', dir: 'powershell', extensions: ['.ps1'] },
   { id: 'bat', title: 'Batch', dir: 'bat', extensions: ['.bat'] },
   { id: 'scala', title: 'Scala', dir: 'scala', extensions: ['.scala'] },
   { id: 'elixir', title: 'Elixir', dir: 'elixir', extensions: ['.ex', '.exs'] },
-  { id: 'clojure', title: 'Clojure', dir: 'clojure', extensions: ['.clj', '.cljs'] },
-  { id: 'perl', title: 'Perl', dir: 'perl', extensions: ['.pl', '.pm'] },
-  { id: 'fsharp', title: 'F#', dir: 'fsharp', extensions: ['.fs', '.fsx'] },
+  { id: 'clojure', title: 'Clojure', dir: 'clojure', extensions: ['.clj'] },
+  { id: 'perl', title: 'Perl', dir: 'perl', extensions: ['.pl'] },
+  { id: 'fsharp', title: 'F#', dir: 'fsharp', extensions: ['.fs'] },
   { id: 'julia', title: 'Julia', dir: 'julia', extensions: ['.jl'] },
-  { id: 'hcl', title: 'HCL', dir: 'hcl', extensions: ['.tf', '.hcl'] },
+  { id: 'hcl', title: 'HCL', dir: 'hcl', extensions: ['.tf'] },
   { id: 'protobuf', title: 'Protocol Buffers', dir: 'protobuf', extensions: ['.proto'] },
-  { id: 'graphql', title: 'GraphQL', dir: 'graphql', extensions: ['.graphql', '.gql'] },
+  { id: 'graphql', title: 'GraphQL', dir: 'graphql', extensions: ['.graphql'] },
   { id: 'dockerfile', title: 'Dockerfile', dir: 'dockerfile', extensions: ['.dockerfile'], filenames: ['Dockerfile'] }
 ]
 
