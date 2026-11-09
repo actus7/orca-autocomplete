@@ -1,19 +1,22 @@
 import type { Activate, OrcaWorkerApi } from 'orca/worker'
 import { complete, type Provider, type ProviderFormat } from './complete.ts'
+import { explainFailure } from './explain.ts'
+import { pickLocale, translator, type Translate } from './i18n.ts'
+import { presetFor } from './presets.ts'
 
 const SECRET_KEY = 'apiKey'
+const LOCALE_KEY = 'locale'
 const STATUS_ITEM = 'status'
 // Why: Orca drops a hook still running after 2 s; stop the request just before that.
 const REQUEST_TIMEOUT_MS = 1800
 const CACHE_SIZE = 50
 const TEST_TIMEOUT_MS = 15_000
-const ERROR_TEXT_CHARS = 60
+const ERROR_TEXT_CHARS = 120
 const LOG_REPEAT_MS = 60_000
 
 type Config = { enabled: boolean; provider: Provider }
 type Stats = {
   suggested: number
-  errors: number
   slow: number
   lastMs: number | null
   lastError: string | null
@@ -43,43 +46,58 @@ async function readConfig(orca: OrcaWorkerApi): Promise<Config | null> {
   }
 }
 
-function statusOf(config: Config | null, stats: Stats): { state: State; tooltip: string } {
+function keyMissing(config: Config): boolean {
+  return presetFor(config.provider.format, config.provider.baseUrl).keyKind === 'required' && !config.provider.apiKey
+}
+
+function stateOf(config: Config | null, stats: Stats): State {
   if (!config) {
-    return {
-      state: 'setup',
-      tooltip:
-        'Autocomplete needs setup: set the base URL and model in Settings, and the API key in the Autocomplete panel (right sidebar).'
-    }
+    return 'setup'
   }
   if (!config.enabled) {
-    return { state: 'off', tooltip: 'Autocomplete is off. Click to turn it on.' }
+    return 'off'
   }
-  const where = `${new URL(config.provider.baseUrl).host} · ${config.provider.model}`
-  if (stats.lastError) {
-    return {
-      state: 'error',
-      tooltip: `Autocomplete: last request failed (${stats.lastError}) · ${where} · click to turn off`
-    }
+  if (keyMissing(config)) {
+    return 'setup'
   }
   if (stats.lastSlow) {
-    return {
-      state: 'slow',
-      tooltip: `Autocomplete: the provider answered too slowly (over ${REQUEST_TIMEOUT_MS / 1000} s) · ${where} · ${stats.slow} slow · try a faster model`
-    }
+    return 'slow'
   }
-  const last = stats.lastMs === null ? 'no request yet' : `last ${stats.lastMs} ms`
-  return {
-    state: 'on',
-    tooltip: `Autocomplete on · ${where} · ${last} · ${stats.suggested} suggested · ${stats.errors} errors · click to turn off`
+  return stats.lastError ? 'error' : 'on'
+}
+
+function tooltipOf(state: State, config: Config | null, stats: Stats, t: Translate): string {
+  const where = config ? `${new URL(config.provider.baseUrl).host} · ${config.provider.model}` : ''
+  const seconds = REQUEST_TIMEOUT_MS / 1000
+  switch (state) {
+    case 'setup':
+      return t('tip.setup')
+    case 'off':
+      return t('tip.off')
+    case 'slow':
+      return t('tip.slow', { seconds, where })
+    case 'error':
+      return t('tip.error', { reason: stats.lastError ?? '' })
+    default:
+      return stats.lastMs === null
+        ? t('tip.onFresh', { where })
+        : t('tip.on', { where, ms: stats.lastMs, count: stats.suggested })
   }
 }
 
 const activate: Activate = (orca) => {
   // ponytail: insertion-ordered Map as LRU; swap for a real cache only if hit rate matters.
   const cache = new Map<string, string>()
-  const stats: Stats = { suggested: 0, errors: 0, slow: 0, lastMs: null, lastError: null, lastSlow: false }
+  const stats: Stats = { suggested: 0, slow: 0, lastMs: null, lastError: null, lastSlow: false }
   let lastLog = { message: '', at: 0 }
   let inflight: AbortController | null = null
+
+  async function translate(): Promise<Translate> {
+    // The panel stores Orca's UI language; before it ever opened, fall back to the OS language.
+    const stored = await orca.storage.get(LOCALE_KEY)
+    const tag = typeof stored === 'string' ? stored : Intl.DateTimeFormat().resolvedOptions().locale
+    return translator(pickLocale(tag))
+  }
 
   // Why: a provider that is down would otherwise log on every typing pause.
   function logFailure(message: string): void {
@@ -91,24 +109,54 @@ const activate: Activate = (orca) => {
     orca.log(`completion failed: ${message}`)
   }
 
+  async function snapshot() {
+    const config = await readConfig(orca)
+    const state = stateOf(config, stats)
+    return {
+      state,
+      lastMs: stats.lastMs,
+      suggested: stats.suggested,
+      reason: stats.lastError,
+      host: config ? new URL(config.provider.baseUrl).host : '',
+      model: config?.provider.model ?? '',
+      hasKey: Boolean(await orca.secrets.get(SECRET_KEY))
+    }
+  }
+
   async function refreshStatus(): Promise<void> {
-    const { state, tooltip } = statusOf(await readConfig(orca), stats)
-    const text = state === 'on' && stats.lastMs !== null ? `${(stats.lastMs / 1000).toFixed(1)}s` : state
+    const [config, t] = [await readConfig(orca), await translate()]
+    const state = stateOf(config, stats)
+    const text =
+      state === 'on' && stats.lastMs !== null
+        ? `${(stats.lastMs / 1000).toFixed(1)}s`
+        : state === 'on'
+          ? t('state.on')
+          : t(`bar.${state}` as 'bar.off')
     try {
-      await orca.host.call('statusBar.update', { id: STATUS_ITEM, tone: TONES[state], text, tooltip })
+      await orca.host.call('statusBar.update', {
+        id: STATUS_ITEM,
+        tone: TONES[state],
+        text,
+        tooltip: tooltipOf(state, config, stats, t)
+      })
     } catch (error) {
       // Why: an Orca without status bar support must not break completion.
       orca.log(`status bar update failed: ${error instanceof Error ? error.message : String(error)}`)
     }
+    orca.panels.post('status.changed', await snapshot())
   }
 
-  async function runTest(): Promise<{ ok: boolean; message: string }> {
-    const config = await readConfig(orca)
+  async function runTest(): Promise<{ ok: boolean; message: string; ms: number | null }> {
+    const [config, t] = [await readConfig(orca), await translate()]
     if (!config) {
-      return { ok: false, message: 'Set a base URL (http or https) and a model in Settings first.' }
+      return { ok: false, message: t('test.needsSetup'), ms: null }
     }
+    if (keyMissing(config)) {
+      return { ok: false, message: t('setup.withKey'), ms: null }
+    }
+    const startedAt = Date.now()
     try {
-      const sample = await complete(
+      await complete(
         config.provider,
         {
           path: 'test.ts',
@@ -118,15 +166,16 @@ const activate: Activate = (orca) => {
         },
         AbortSignal.timeout(TEST_TIMEOUT_MS)
       )
-      return { ok: true, message: sample ? `Got: ${sample.slice(0, 80)}` : 'Connected, empty answer.' }
+      return { ok: true, message: '', ms: Date.now() - startedAt }
     } catch (error) {
-      return { ok: false, message: error instanceof Error ? error.message : String(error) }
+      const host = new URL(config.provider.baseUrl).host
+      return { ok: false, message: explainFailure(error, t, host, TEST_TIMEOUT_MS), ms: null }
     }
   }
 
   orca.hooks.on('editor.inlineCompletion', async (event, next) => {
     const config = await readConfig(orca)
-    if (!config?.enabled) {
+    if (!config?.enabled || keyMissing(config)) {
       return
     }
     const key = `${event.path}\n${event.prefix.slice(-300)}\n${event.suffix.slice(0, 100)}`
@@ -165,10 +214,12 @@ const activate: Activate = (orca) => {
         stats.lastSlow = true
         void refreshStatus()
       } else if (!controller.signal.aborted) {
-        const message = error instanceof Error ? error.message : String(error)
-        logFailure(message)
-        stats.errors += 1
-        stats.lastError = message.slice(0, ERROR_TEXT_CHARS)
+        logFailure(error instanceof Error ? error.message : String(error))
+        const host = new URL(config.provider.baseUrl).host
+        stats.lastError = explainFailure(error, await translate(), host, REQUEST_TIMEOUT_MS).slice(
+          0,
+          ERROR_TEXT_CHARS
+        )
         stats.lastSlow = false
         void refreshStatus()
       }
@@ -180,9 +231,7 @@ const activate: Activate = (orca) => {
     }
   })
 
-  orca.panels.handle('key.status', async () => ({
-    hasKey: Boolean(await orca.secrets.get(SECRET_KEY))
-  }))
+  orca.panels.handle('status.get', snapshot)
 
   orca.panels.handle('key.set', async ({ key }) => {
     const trimmed = key.trim()
@@ -198,7 +247,13 @@ const activate: Activate = (orca) => {
     return { hasKey: Boolean(trimmed) }
   })
 
-  orca.panels.handle('provider.test', runTest)
+  orca.panels.handle('provider.test', async () => {
+    const result = await runTest()
+    stats.lastError = result.ok ? null : result.message.slice(0, ERROR_TEXT_CHARS)
+    stats.lastSlow = false
+    void refreshStatus()
+    return result
+  })
 
   orca.commands.register('toggle', async () => {
     const enabled = (await orca.settings.get('enabled')) !== false
@@ -206,17 +261,20 @@ const activate: Activate = (orca) => {
     stats.lastError = null
     stats.lastSlow = false
     await refreshStatus()
-    return `Autocomplete ${enabled ? 'off' : 'on'}`
+    return (await translate())(enabled ? 'cmd.off' : 'cmd.on')
   })
 
   orca.commands.register('test', async () => {
-    const { ok, message } = await runTest()
-    stats.lastError = ok ? null : message.slice(0, ERROR_TEXT_CHARS)
+    const [result, t] = [await runTest(), await translate()]
+    stats.lastError = result.ok ? null : result.message.slice(0, ERROR_TEXT_CHARS)
     await refreshStatus()
-    return `Autocomplete test ${ok ? 'passed' : 'failed'}: ${message}`
+    return result.ok
+      ? t('cmd.testOk', { seconds: ((result.ms ?? 0) / 1000).toFixed(1) })
+      : t('cmd.testFail', { reason: result.message })
   })
 
   orca.settings.onDidChange(() => void refreshStatus())
+  orca.storage.onDidChange(() => void refreshStatus())
   void refreshStatus()
 }
 

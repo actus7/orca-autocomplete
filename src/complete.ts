@@ -137,6 +137,17 @@ export function trimSuffixOverlap(suggestion: string, suffix: string): string {
   return suggestion
 }
 
+/** The provider answered, but not with success; carries the status so it can be explained. */
+export class ProviderHttpError extends Error {
+  readonly status: number
+
+  constructor(status: number) {
+    super(`provider answered HTTP ${status}`)
+    this.name = 'ProviderHttpError'
+    this.status = status
+  }
+}
+
 export type FetchLike = (
   url: string,
   init: { method: 'POST'; headers: Record<string, string>; body: string; signal?: AbortSignal }
@@ -152,7 +163,7 @@ export async function complete(
   const response = await fetchImpl(url, { ...init, signal })
   if (!response.ok) {
     // Why status only: the body can echo the prompt, which holds the person's code.
-    throw new Error(`provider answered HTTP ${response.status}`)
+    throw new ProviderHttpError(response.status)
   }
   return trimSuffixOverlap(cleanSuggestion(extractText(provider.format, await response.json())), ctx.suffix)
 }

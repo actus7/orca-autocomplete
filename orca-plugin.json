@@ -4,7 +4,7 @@
   "name": "Autocomplete",
   "version": "0.1.0",
   "execution": "trusted-worker",
-  "description": "Inline AI code completion (ghost text) in Orca's editor, using any OpenAI-compatible or Anthropic-compatible provider you choose.",
+  "description": "Gray inline suggestions as you type, powered by the AI provider you choose: OpenAI, Anthropic, OpenRouter, Ollama or any compatible API.",
   "license": "MIT",
   "repository": "https://github.com/actus7/orca-autocomplete",
   "engines": {
@@ -30,14 +30,14 @@
       {
         "key": "enabled",
         "title": "Enabled",
-        "description": "Turn inline completion on or off.",
+        "description": "Turn inline suggestions on or off. The Autocomplete panel and the status bar item do the same.",
         "type": "boolean",
         "default": true
       },
       {
         "key": "format",
         "title": "Provider format",
-        "description": "API style the base URL speaks.",
+        "description": "Set by the provider you pick in the Autocomplete panel.",
         "type": "string",
         "enum": [
           "openai",
@@ -52,7 +52,7 @@
       {
         "key": "baseUrl",
         "title": "Base URL",
-        "description": "OpenAI style: the root holding /chat/completions, usually ending in /v1. Anthropic style: the host, e.g. https://api.anthropic.com. The API key is set in the Autocomplete panel (right sidebar), not here.",
+        "description": "Set by the provider you pick in the Autocomplete panel, where the API key is kept too.",
         "type": "string",
         "default": "https://api.openai.com/v1",
         "placeholder": "http://localhost:11434/v1"
@@ -60,14 +60,14 @@
       {
         "key": "model",
         "title": "Model",
-        "description": "A fast model works best: Orca drops answers slower than about 2 seconds.",
+        "description": "A fast model works best: answers slower than 1.8 seconds are dropped. Change it in the Autocomplete panel.",
         "type": "string",
         "default": "gpt-4o-mini"
       },
       {
         "key": "maxTokens",
         "title": "Max tokens",
-        "description": "Longest completion to request.",
+        "description": "Longest suggestion to request. The default suits most code.",
         "type": "integer",
         "default": 96,
         "minimum": 16,
@@ -101,6 +101,9 @@
     },
     {
       "kind": "secrets:own"
+    },
+    {
+      "kind": "storage:own"
     }
   ]
 }
