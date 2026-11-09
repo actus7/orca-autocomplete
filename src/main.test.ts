@@ -393,3 +393,74 @@ test('a key saved before keys were pinned is adopted by the provider configured 
   assert.equal(worker.store.get('keyAddress'), 'https://api.openai.com/v1')
   assert.equal(((await worker.request('status.get')) as Json).hasKey, true)
 })
+
+type BenchResult = { model: string; ok: boolean; ms: number | null }
+
+/** Answers by the model named in the request: a text, an HTTP error, or nothing at all. */
+function stubBenchFetch(byModel: Record<string, string | number>): {
+  seen: { model: string; headers: Record<string, string> }[]
+  restore: () => void
+} {
+  const real = globalThis.fetch
+  const seen: { model: string; headers: Record<string, string> }[] = []
+  globalThis.fetch = (async (_url: string, init: { body: string; headers: Record<string, string> }) => {
+    const model = JSON.parse(init.body).model as string
+    seen.push({ model, headers: init.headers })
+    const answer = byModel[model]
+    if (typeof answer === 'number') {
+      return new Response('{}', { status: answer })
+    }
+    return new Response(JSON.stringify({ choices: [{ message: { content: answer ?? '' } }] }))
+  }) as never
+  return { seen, restore: () => void (globalThis.fetch = real) }
+}
+
+const benchAsk = { format: 'openai', baseUrl: 'https://api.openai.com/v1', key: '' }
+
+test('models.bench times each model and marks failures and empty answers as not ok', async () => {
+  const { restore } = stubBenchFetch({ good: '42', empty: '', down: 500 })
+  try {
+    const worker = await mountWorker(keyedSettings, { apiKey: 'saved' })
+    const { results } = (await worker.request('models.bench', { ...benchAsk, models: ['good', 'empty', 'down'] })) as { results: BenchResult[] }
+    const byModel = Object.fromEntries(results.map((r) => [r.model, r]))
+    assert.equal(byModel.good.ok, true)
+    assert.equal(typeof byModel.good.ms, 'number')
+    assert.deepEqual([byModel.empty.ok, byModel.empty.ms === null], [false, false])
+    assert.deepEqual(byModel.down, { model: 'down', ok: false, ms: null })
+  } finally {
+    restore()
+  }
+})
+
+test('models.bench times at most four models per request, so a client cannot fan out', async () => {
+  const { seen, restore } = stubBenchFetch({})
+  try {
+    const worker = await mountWorker(keyedSettings, { apiKey: 'saved' })
+    await worker.request('models.bench', { ...benchAsk, models: ['a', 'b', 'c', 'd', 'e', 'f'] })
+    assert.equal(seen.length, 4)
+  } finally {
+    restore()
+  }
+})
+
+test('models.bench never sends the saved key to another address, nor any key to a server that needs none', async () => {
+  const { seen, restore } = stubBenchFetch({ m: 'x' })
+  try {
+    const worker = await mountWorker(keyedSettings, { apiKey: 'saved' })
+    await worker.request('models.bench', { format: 'openai', baseUrl: 'https://openrouter.ai/api/v1', key: '', models: ['m'] })
+    await worker.request('models.bench', { format: 'openai', baseUrl: 'http://localhost:11434/v1', key: 'typed', models: ['m'] })
+    await worker.request('models.bench', { ...benchAsk, models: ['m'] })
+    assert.equal('authorization' in seen[0].headers, false)
+    assert.equal('authorization' in seen[1].headers, false)
+    assert.equal(seen[2].headers.authorization, 'Bearer saved')
+  } finally {
+    restore()
+  }
+})
+
+test('models.bench refuses an address that is not http(s)', async () => {
+  const worker = await mountWorker(keyedSettings, { apiKey: 'saved' })
+  const answer = (await worker.request('models.bench', { format: 'openai', baseUrl: 'ftp://x', key: '', models: ['m'] })) as { results: BenchResult[]; message: string }
+  assert.deepEqual(answer.results, [])
+  assert.match(answer.message, /base URL/)
+})

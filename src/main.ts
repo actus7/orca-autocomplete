@@ -2,7 +2,7 @@ import type { Activate, OrcaWorkerApi } from 'orca/worker'
 import { complete, type Provider, type ProviderFormat } from './complete.ts'
 import { explainFailure } from './explain.ts'
 import { pickLocale, translator, type Translate } from './i18n.ts'
-import { listModels } from './models.ts'
+import { BENCH_BATCH_SIZE, listModels } from './models.ts'
 import { presetFor } from './presets.ts'
 
 const SECRET_KEY = 'apiKey'
@@ -15,6 +15,16 @@ const REQUEST_TIMEOUT_MS = 1800
 const CACHE_SIZE = 50
 const TEST_TIMEOUT_MS = 15_000
 const MODELS_TIMEOUT_MS = 10_000
+// Why: a model slower than the hook's limit is still worth showing, so the person sees how slow it is.
+const BENCH_TIMEOUT_MS = 6000
+const BENCH_MAX_TOKENS = 32
+// The same small request for "Test connection" and for timing models, so the numbers compare.
+const TEST_EVENT = {
+  path: 'test.ts',
+  languageId: 'typescript',
+  prefix: 'function add(a: number, b: number) {\n  return ',
+  suffix: '\n}'
+}
 const ERROR_TEXT_CHARS = 120
 const LOG_REPEAT_MS = 60_000
 
@@ -328,6 +338,33 @@ const activate: Activate = (orca) => {
         message: explainFailure(error, t, hostOf(url), MODELS_TIMEOUT_MS)
       }
     }
+  })
+
+  orca.panels.handle('models.bench', async ({ format, baseUrl, key, models }) => {
+    const t = await translate()
+    const url = baseUrl.trim()
+    if (!/^https?:\/\//i.test(url) || !hostOf(url)) {
+      return { results: [], message: t('test.needsSetup') }
+    }
+    const asked: ProviderFormat = format === 'anthropic' ? 'anthropic' : 'openai'
+    const apiKey = await keyForListing(asked, url, key.trim())
+    const ids = models
+      .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+      .slice(0, BENCH_BATCH_SIZE)
+    const results = await Promise.all(
+      ids.map(async (model) => {
+        const provider: Provider = { format: asked, baseUrl: url, model, apiKey, maxTokens: BENCH_MAX_TOKENS }
+        const startedAt = Date.now()
+        try {
+          const suggestion = await complete(provider, TEST_EVENT, AbortSignal.timeout(BENCH_TIMEOUT_MS))
+          // Why: a model that answers nothing, or too slowly to matter, is no use for completing code.
+          return { model, ok: suggestion.trim() !== '', ms: Date.now() - startedAt }
+        } catch {
+          return { model, ok: false, ms: null }
+        }
+      })
+    )
+    return { results, message: '' }
   })
 
   orca.commands.register('toggle', async () => {

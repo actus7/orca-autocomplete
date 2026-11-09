@@ -26,6 +26,11 @@ declare module 'orca' {
       input: { format: 'openai' | 'anthropic'; baseUrl: string; key: string }
       output: { ok: boolean; models: string[]; message: string }
     }
+    /** Times one real completion per model (the panel sends a few at a time); nothing is saved. */
+    'models.bench': {
+      input: { format: 'openai' | 'anthropic'; baseUrl: string; key: string; models: string[] }
+      output: { results: { model: string; ok: boolean; ms: number | null }[]; message: string }
+    }
     /** One real completion against the configured provider. */
     'provider.test': {
       input: Record<string, never>

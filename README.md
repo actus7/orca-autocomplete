@@ -32,7 +32,7 @@ If something is not right, the panel says what happened and what to do next.
 | Other, OpenAI-compatible | Optional | Any gateway or proxy with a `/chat/completions` endpoint. |
 | Other, Anthropic-compatible | Optional | Any endpoint with a `/v1/messages` endpoint. |
 
-**Pick the model from the list.** The panel loads the models your provider offers and narrows the list as you type, so you never have to remember an exact name. You can still type any name yourself.
+**Pick the model from the list, or type its name.** Two tabs under *Model*: *Pick from the list* shows the models your provider offers, with a search box; *Type the name* is for any model the list does not show. Press **Test speed** to time up to 12 models (your current one first, then the likely-fast ones) with one short request each. The list reorders itself fastest first, a star marks the best picks, a cross marks models that failed, and **Use the fastest** selects the winner. Search for other models and test again to try more.
 
 **Speed matters more than size.** Orca drops a suggestion that takes longer than about 2 seconds, so choose a small, fast model. The panel pre-fills a sensible one for each provider.
 

@@ -8,6 +8,7 @@ import {
   Heading,
   Input,
   plugin,
+  Progress,
   read,
   Row,
   Select,
@@ -17,12 +18,23 @@ import {
   Stack,
   storage,
   Switch,
+  Tab,
+  Tabs,
   Text,
   type PanelContext,
   type StatusSnapshot
 } from 'orca'
 import { pickLocale, translator } from './i18n.ts'
-import { filterModels, MODEL_LIST_MAX_SHOWN } from './models.ts'
+import {
+  BENCH_BATCH_SIZE,
+  filterModels,
+  MODEL_LIST_MAX_SHOWN,
+  modelLabel,
+  pickCandidates,
+  rankModels,
+  recommendedModels,
+  type Speeds
+} from './models.ts'
 import { PRESETS, presetById, presetFor, type PresetId } from './presets.ts'
 
 const tr = translator(pickLocale(env.locale))
@@ -43,7 +55,12 @@ const providerOpen = atom<boolean | null>(null)
 const models = atom<string[]>([])
 const modelsPhase = atom<'idle' | 'loading' | 'done' | 'failed'>('idle')
 const modelsMessage = atom('')
+const modelMode = atom<'list' | 'type'>('list')
+const modelSearch = atom('')
+const speeds = atom<Speeds>({})
+const bench = atom<{ done: number; total: number } | null>(null)
 let modelsRun = 0
+let benchRun = 0
 
 function hostOf(url: string): string {
   try {
@@ -94,8 +111,42 @@ async function loadModels(): Promise<void> {
 
 function forgetModels(): void {
   modelsRun += 1
+  benchRun += 1
   set(models, [])
   set(modelsPhase, 'idle')
+  set(modelSearch, '')
+  set(speeds, {})
+  set(bench, null)
+}
+
+/** Times the given models a few at a time, so results (and the order of the list) fill in as they arrive. */
+async function benchModels(ids: string[]): Promise<void> {
+  const run = ++benchRun
+  const format = presetById(read(presetId)).format
+  set(bench, { done: 0, total: ids.length })
+  for (let start = 0; start < ids.length; start += BENCH_BATCH_SIZE) {
+    const batch = ids.slice(start, start + BENCH_BATCH_SIZE)
+    let results: { model: string; ok: boolean; ms: number | null }[]
+    try {
+      const answer = await plugin.request('models.bench', {
+        format,
+        baseUrl: read(baseUrl),
+        key: read(draftKey),
+        models: batch
+      })
+      results = answer.results
+    } catch {
+      // Why: a request that could not even be sent counts as a failed test for these models.
+      results = batch.map((model) => ({ model, ok: false, ms: null }))
+    }
+    if (run !== benchRun) {
+      return
+    }
+    const found = Object.fromEntries(results.map((r) => [r.model, { ok: r.ok, ms: r.ms }]))
+    set(speeds, { ...read(speeds), ...found })
+    set(bench, { done: Math.min(start + batch.length, ids.length), total: ids.length })
+  }
+  set(bench, null)
 }
 
 /** Runs once before the first render. */
@@ -253,54 +304,143 @@ function KeyField(props: { hasKey: boolean }) {
   )
 }
 
-/** The provider's own list of models, narrowed by what is typed in the model field. */
-function ModelPicker(props: { hasKey: boolean }) {
+/** One list of the provider's models: searchable, fastest first once tested, with a speed test. */
+function ModelList(props: { hasKey: boolean }) {
   const phase = read(modelsPhase)
   const all = read(models)
-  const typed = read(model)
-  const matched = filterModels(all, typed)
-  const chosen = all.includes(typed.trim()) ? typed.trim() : ''
-  const capped = matched.slice(0, MODEL_LIST_MAX_SHOWN)
-  // Why: the chosen model must stay in the list even when it sorts beyond the first page.
+  const timings = read(speeds)
+  const running = read(bench)
+  const limitMs = SLOW_SECONDS * 1000
+  const matched = filterModels(all, read(modelSearch))
+  const ranked = rankModels(matched, timings, limitMs)
+  const best = recommendedModels(ranked, timings, limitMs)
+  const chosen = all.includes(read(model).trim()) ? read(model).trim() : ''
+  const capped = ranked.slice(0, MODEL_LIST_MAX_SHOWN)
+  // Why: the chosen model must stay in the list even when it ranks beyond the first page.
   const shown = chosen && !capped.includes(chosen) ? [chosen, ...capped.slice(0, -1)] : capped
+  const untested = pickCandidates(ranked, timings, undefined, chosen)
+  const tested = matched.some((id) => timings[id])
   const needsKey = presetById(read(presetId)).keyKind === 'required' && !props.hasKey && read(draftKey).trim() === ''
+  const fastest = best[0]
   return (
     <Stack gap="xs">
       {phase === 'loading' ? <Spinner label={tr('models.loading')} /> : null}
+      {phase !== 'loading' && all.length > 0 ? (
+        <Input
+          label={tr('models.search')}
+          type="search"
+          placeholder={tr('models.search')}
+          value={read(modelSearch)}
+          onChange={(value) => set(modelSearch, value)}
+        />
+      ) : null}
       {phase !== 'loading' && shown.length > 0 ? (
         <Select
           label={tr('models.pick')}
           placeholder={tr('models.placeholder')}
           value={chosen}
-          options={shown.map((id) => ({ value: id, label: id }))}
+          options={shown.map((id) => ({ value: id, label: modelLabel(id, timings[id], best.includes(id)) }))}
           onChange={(value) => {
             set(model, value)
             set(outcome, null)
           }}
         />
       ) : null}
+      {running ? (
+        <Progress
+          label={tr('models.benching', { done: running.done, total: running.total })}
+          value={Math.round((running.done / running.total) * 100)}
+        />
+      ) : null}
+      {!running && fastest && fastest !== chosen ? (
+        <Button
+          size="sm"
+          icon="zap"
+          onPress={() => {
+            set(model, fastest)
+            set(outcome, null)
+          }}
+        >
+          {tr('models.useFastest', { model: fastest, seconds: seconds(timings[fastest]?.ms ?? 0) })}
+        </Button>
+      ) : null}
+      {!running && tested && best.length === 0 ? (
+        <Text tone="warning" size="sm">{tr('models.noneFast', { seconds: SLOW_SECONDS })}</Text>
+      ) : null}
       {phase === 'done' && all.length === 0 ? <Text muted size="sm">{tr('models.none')}</Text> : null}
       {phase === 'done' && matched.length > shown.length ? (
         <Text muted size="sm">{tr('models.count', { shown: shown.length, total: matched.length })}</Text>
       ) : null}
-      {phase === 'done' && all.length > 0 && matched.length === all.length && shown.length === all.length ? (
-        <Text muted size="sm">{tr('models.total', { total: all.length })}</Text>
+      {phase === 'done' && all.length > 0 && !running ? (
+        <Text muted size="sm">
+          {untested.length === 0 && tested ? tr('models.allTested') : tr('models.benchHint')}
+        </Text>
       ) : null}
       {phase === 'failed' ? (
         <Text tone="danger" size="sm">{tr('models.failed', { reason: read(modelsMessage) })}</Text>
       ) : null}
       {phase === 'idle' && needsKey ? <Text muted size="sm">{tr('models.needKey')}</Text> : null}
       <Row>
+        {all.length > 0 ? (
+          <Button
+            variant="outline"
+            size="sm"
+            icon="gauge"
+            disabled={Boolean(running) || untested.length === 0}
+            onPress={() => void benchModels(untested)}
+          >
+            {tr('models.bench', { count: untested.length })}
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           size="sm"
           icon="refresh"
-          disabled={phase === 'loading' || !canLoadModels(props.hasKey)}
+          disabled={phase === 'loading' || Boolean(running) || !canLoadModels(props.hasKey)}
           onPress={() => void loadModels()}
         >
           {tr('models.load')}
         </Button>
+        {phase === 'failed' || (phase === 'done' && all.length === 0) ? (
+          <Button variant="ghost" size="sm" icon="edit" onPress={() => set(modelMode, 'type')}>
+            {tr('models.typeInstead')}
+          </Button>
+        ) : null}
       </Row>
+    </Stack>
+  )
+}
+
+/** Either choose the model from the provider's list or type its exact name; both set the same model. */
+function ModelField(props: { hasKey: boolean }) {
+  const preset = presetById(read(presetId))
+  return (
+    <Stack gap="xs">
+      <Tabs
+        label={tr('mode.label')}
+        value={read(modelMode)}
+        onChange={(value) => set(modelMode, value === 'type' ? 'type' : 'list')}
+      >
+        <Tab value="list" label={tr('mode.list')} icon="search">
+          <ModelList hasKey={props.hasKey} />
+        </Tab>
+        <Tab value="type" label={tr('mode.type')} icon="edit">
+          <Stack gap="xs">
+            <Input
+              label={tr('model')}
+              placeholder={preset.model}
+              value={read(model)}
+              onChange={(value) => {
+                set(model, value)
+                set(outcome, null)
+              }}
+              onSubmit={() => void saveAndTest()}
+            />
+            <Text muted size="sm">{tr('model.typeHint')}</Text>
+          </Stack>
+        </Tab>
+      </Tabs>
+      <Text muted size="sm">{tr('model.hint', { seconds: SLOW_SECONDS })}</Text>
     </Stack>
   )
 }
@@ -318,20 +458,7 @@ function ProviderForm(props: { hasKey: boolean }) {
       />
       <BaseUrlField />
       <KeyField hasKey={props.hasKey} />
-      <Stack gap="xs">
-        <Input
-          label={tr('model')}
-          placeholder={preset.model}
-          value={read(model)}
-          onChange={(value) => {
-            set(model, value)
-            set(outcome, null)
-          }}
-          onSubmit={() => void saveAndTest()}
-        />
-        <Text muted size="sm">{tr('model.hint', { seconds: SLOW_SECONDS })}</Text>
-        <ModelPicker hasKey={props.hasKey} />
-      </Stack>
+      <ModelField hasKey={props.hasKey} />
       <Button icon="check" disabled={busy} onPress={() => void saveAndTest()}>
         {busy ? tr('testing') : tr('saveTest')}
       </Button>

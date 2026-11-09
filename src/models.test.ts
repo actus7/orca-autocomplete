@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { ProviderHttpError } from './complete.ts'
-import { buildModelsRequest, extractModelIds, filterModels, listModels } from './models.ts'
+import {
+  buildModelsRequest,
+  extractModelIds,
+  filterModels,
+  isFast,
+  listModels,
+  modelLabel,
+  pickCandidates,
+  rankModels,
+  recommendedModels,
+  type Speeds
+} from './models.ts'
 
 test('the OpenAI-style list request is a GET on /models with a bearer key when there is one', () => {
   const { url, init } = buildModelsRequest({ format: 'openai', baseUrl: 'https://api.example.com/v1/', apiKey: 'k' })
@@ -45,4 +56,57 @@ test('filterModels narrows by what is typed, but shows everything once a model i
   assert.deepEqual(filterModels(all, 'haiku'), ['claude-haiku-5-5'])
   assert.deepEqual(filterModels(all, 'gpt-4o-mini'), all)
   assert.deepEqual(filterModels(all, 'zzz'), [])
+})
+
+const LIMIT = 1800
+const timed: Speeds = {
+  slow: { ok: true, ms: 3200 },
+  quick: { ok: true, ms: 420 },
+  broken: { ok: false, ms: null },
+  medium: { ok: true, ms: 900 }
+}
+
+test('rankModels puts fast answers first, then slow ones, then failures, then untested ones', () => {
+  const ranked = rankModels(['untested-b', 'broken', 'slow', 'untested-a', 'medium', 'quick'], timed, LIMIT)
+  assert.deepEqual(ranked, ['quick', 'medium', 'slow', 'broken', 'untested-b', 'untested-a'])
+})
+
+test('rankModels keeps the provider order while nothing has been tested', () => {
+  assert.deepEqual(rankModels(['b', 'a', 'c'], {}, LIMIT), ['b', 'a', 'c'])
+})
+
+test('isFast needs an answer inside the limit', () => {
+  assert.equal(isFast(timed.quick, LIMIT), true)
+  assert.equal(isFast(timed.slow, LIMIT), false)
+  assert.equal(isFast(timed.broken, LIMIT), false)
+  assert.equal(isFast(undefined, LIMIT), false)
+})
+
+test('recommendedModels are the fastest three that answered in time', () => {
+  const many: Speeds = { a: { ok: true, ms: 500 }, b: { ok: true, ms: 300 }, c: { ok: true, ms: 700 }, d: { ok: true, ms: 100 }, e: { ok: true, ms: 9000 } }
+  assert.deepEqual(recommendedModels(['a', 'b', 'c', 'd', 'e'], many, LIMIT), ['d', 'b', 'a'])
+  assert.deepEqual(recommendedModels(['slow', 'broken'], timed, LIMIT), [])
+})
+
+test('modelLabel shows the time, a star for the best picks and a cross for failures', () => {
+  assert.equal(modelLabel('m', undefined, false), 'm')
+  assert.equal(modelLabel('m', { ok: true, ms: 420 }, true), '★ m · 0.4s')
+  assert.equal(modelLabel('m', { ok: true, ms: 3200 }, false), 'm · 3.2s')
+  assert.equal(modelLabel('m', { ok: false, ms: null }, false), 'm · ✕')
+})
+
+test('pickCandidates tries likely-fast names first, skips tested models and honours the limit', () => {
+  const all = ['a/opus-4', 'b/gemini-pro', 'c/claude-haiku-4-5', 'd/gpt-5-mini', 'e/llama-70b', 'f/qwen2.5-coder:7b', 'g/flash-high', 'h/done']
+  const picked = pickCandidates(all, { 'h/done': { ok: true, ms: 100 } }, 4)
+  assert.deepEqual(picked, ['c/claude-haiku-4-5', 'd/gpt-5-mini', 'f/qwen2.5-coder:7b', 'a/opus-4'])
+})
+
+test('pickCandidates treats small parameter counts as likely fast and large ones as slow', () => {
+  assert.deepEqual(pickCandidates(['x/big-model', 'y/tiny:1.5b'], {}, 1), ['y/tiny:1.5b'])
+  assert.deepEqual(pickCandidates(['x/llama-70b', 'y/tiny-3b'], {}, 1), ['y/tiny-3b'])
+})
+
+test('pickCandidates always includes the model in use, so there is something to compare against', () => {
+  const picked = pickCandidates(['a/flash', 'b/mini', 'c/my-current-big-model'], {}, 2, 'c/my-current-big-model')
+  assert.deepEqual(picked, ['c/my-current-big-model', 'a/flash'])
 })
