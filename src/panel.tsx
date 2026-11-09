@@ -77,14 +77,24 @@ const confirmingReset = atom(false)
 let modelsRun = 0
 let benchRun = 0
 
+// The provider as it was last read from the settings, to tell a change of it from a change of anything else.
+const savedProvider = atom('')
+
 async function loadSettings(): Promise<void> {
   const saved = await settings.get()
   const format = parseFormat(saved.format)
   const url = String(saved.baseUrl ?? '')
+  const name = String(saved.model ?? '')
   set(enabled, saved.enabled !== false)
-  set(presetId, presetFor(format, url).id)
-  set(baseUrl, url)
-  set(model, String(saved.model ?? ''))
+  // Why only when the provider itself changed: this also runs when any other setting changes (the on/off switch, or
+  // the first of the three writes of a save), and what the person has picked and not saved yet must survive that.
+  const provider = [format, url, name].join('\n')
+  if (provider !== read(savedProvider)) {
+    set(savedProvider, provider)
+    set(presetId, presetFor(format, url).id)
+    set(baseUrl, url)
+    set(model, name)
+  }
 }
 
 /** Whether asking the provider for its models can work: an address, and a key when one is needed. */
@@ -199,6 +209,10 @@ export function setup(ctx: PanelContext): void {
   ctx.subscriptions.push(
     plugin.on('status.changed', (snapshot) => {
       set(status, snapshot)
+      // Why: a test that failed is old news once suggestions work; left up, it says "could not connect" over them.
+      if (snapshot.state === 'on' && read(outcome)?.ok === false) {
+        set(outcome, null)
+      }
       void loadUsage().catch(() => undefined)
       void loadStats().catch(() => undefined)
     }),
@@ -236,11 +250,13 @@ async function saveAndTest(): Promise<void> {
   }
   set(testing, true)
   set(outcome, null)
+  // Why read first: each write below tells the panel the settings changed, and nothing read after that is sure
+  // to still be what the person chose.
+  const chosen = { format: presetById(read(presetId)).format, baseUrl: read(baseUrl).trim(), model: read(model).trim() }
   try {
-    const preset = presetById(read(presetId))
-    await settings.set('format', preset.format)
-    await settings.set('baseUrl', read(baseUrl).trim())
-    await settings.set('model', read(model).trim())
+    await settings.set('format', chosen.format)
+    await settings.set('baseUrl', chosen.baseUrl)
+    await settings.set('model', chosen.model)
     const key = read(draftKey).trim()
     if (key) {
       await plugin.request('key.set', { key })

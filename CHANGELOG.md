@@ -2,6 +2,12 @@
 
 A listed version is permanent in Orca's catalog, so every change ships as a new version.
 
+## 0.3.1
+
+- Fix: the model picked in the panel is the one that is saved and tested. Saving used to put the previous model back and test that one.
+- Fix: a model picked and not saved yet is kept when another setting changes, such as the on/off switch.
+- Fix: the notice of a failed test goes away once suggestions work, instead of saying "could not connect" over them.
+
 ## 0.3.0
 
 - **Next edit**: after you change a line and pause, the same change is offered where it is also needed. A rename is carried over to the other uses with no AI; with the setting on, your provider is asked for the rest. It is drawn in the theme's own colors for removed and added text, with the key that applies it (Tab) beside it.

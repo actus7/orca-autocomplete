@@ -74,3 +74,42 @@ test('a worker that does not answer is said, not hidden', async () => {
   assert.equal(drawn.find({ type: 'Skeleton' }), null, 'nothing pretends to still be loading')
   await drawn.unmount()
 })
+
+// Why: saving writes three settings one after another, and each write tells the panel "settings changed". Reading the
+// saved values back at that moment used to put the old model over the one just picked, so the old one was saved again.
+test('the model picked in the list is the one that is saved and tested', async () => {
+  const models = { ok: true, message: '', models: ['claude-haiku-4-5', 'gpt-4o', 'gpt-4o-mini'] }
+  const host = mockHost({ settings, requests: { ...requests, 'models.list': models, 'provider.test': { ok: true, message: '', ms: 300 } } })
+  const drawn = await mount(panel, { host, locale: 'en-US' })
+  await drawn.toggle({ type: 'Collapsible', label: 'Provider settings' })
+  await drawn.select({ type: 'Select', label: 'Models from your provider' }, 'claude-haiku-4-5')
+  await drawn.press({ type: 'Button', text: 'Save and test' })
+  assert.equal(host.data().settings.model, 'claude-haiku-4-5')
+  await drawn.unmount()
+})
+
+// Why: a model picked but not saved yet must survive a setting changed elsewhere, such as the on/off switch.
+test('turning suggestions off and on keeps a model that was picked and not saved yet', async () => {
+  const models = { ok: true, message: '', models: ['claude-haiku-4-5', 'gpt-4o', 'gpt-4o-mini'] }
+  const drawn = await mount(panel, { host: mockHost({ settings, requests: { ...requests, 'models.list': models } }), locale: 'en-US' })
+  await drawn.toggle({ type: 'Collapsible', label: 'Provider settings' })
+  const picker = { type: 'Select', label: 'Models from your provider' }
+  await drawn.select(picker, 'claude-haiku-4-5')
+  await drawn.toggle({ type: 'Switch', label: 'Suggest as I type' })
+  assert.equal(drawn.valueOf(picker), 'claude-haiku-4-5')
+  await drawn.unmount()
+})
+
+// Why: the notice of a failed test used to stay for good, saying "could not connect" over suggestions that worked.
+test('a failed test stops being said once suggestions work', async () => {
+  const failed = { ok: false, message: 'Rate limit reached. Wait a moment or pick another model.', ms: null }
+  const drawn = await mount(panel, { host: mockHost({ settings, requests: { ...requests, 'provider.test': failed } }), locale: 'en-US' })
+  await drawn.toggle({ type: 'Collapsible', label: 'Provider settings' })
+  await drawn.press({ type: 'Button', text: 'Save and test' })
+  assert.ok(drawn.find({ type: 'Callout', text: /Rate limit reached/ }))
+  await drawn.post('status.changed', { ...status, state: 'error', reason: failed.message })
+  assert.ok(drawn.find({ type: 'Callout', text: /Rate limit reached/ }), 'still said while it is still failing')
+  await drawn.post('status.changed', status)
+  assert.equal(drawn.find({ type: 'Callout', text: /Rate limit reached/ }), null)
+  await drawn.unmount()
+})

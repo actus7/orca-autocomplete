@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "autocomplete",
   "name": "Autocomplete",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "execution": "trusted-worker",
   "description": "Gray inline suggestions as you type, powered by the AI provider you choose (OpenAI, Anthropic, OpenRouter, Mistral, Ollama or any compatible API), plus snippets, postfix templates and language servers with the AI off.",
   "license": "MIT",
