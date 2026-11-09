@@ -8,12 +8,20 @@ const REQUEST_TIMEOUT_MS = 1800
 const CACHE_SIZE = 50
 const TEST_TIMEOUT_MS = 15_000
 const ERROR_TEXT_CHARS = 60
+const LOG_REPEAT_MS = 60_000
 
 type Config = { enabled: boolean; provider: Provider }
-type Stats = { suggested: number; errors: number; lastMs: number | null; lastError: string | null }
-type State = 'on' | 'off' | 'setup' | 'error'
+type Stats = {
+  suggested: number
+  errors: number
+  slow: number
+  lastMs: number | null
+  lastError: string | null
+  lastSlow: boolean
+}
+type State = 'on' | 'off' | 'setup' | 'error' | 'slow'
 
-const TONES = { on: 'success', off: 'neutral', setup: 'warning', error: 'danger' } as const
+const TONES = { on: 'success', off: 'neutral', setup: 'warning', error: 'danger', slow: 'warning' } as const
 
 async function readConfig(orca: OrcaWorkerApi): Promise<Config | null> {
   const settings = await orca.settings.get()
@@ -53,6 +61,12 @@ function statusOf(config: Config | null, stats: Stats): { state: State; tooltip:
       tooltip: `Autocomplete: last request failed (${stats.lastError}) · ${where} · click to turn off`
     }
   }
+  if (stats.lastSlow) {
+    return {
+      state: 'slow',
+      tooltip: `Autocomplete: the provider answered too slowly (over ${REQUEST_TIMEOUT_MS / 1000} s) · ${where} · ${stats.slow} slow · try a faster model`
+    }
+  }
   const last = stats.lastMs === null ? 'no request yet' : `last ${stats.lastMs} ms`
   return {
     state: 'on',
@@ -63,8 +77,19 @@ function statusOf(config: Config | null, stats: Stats): { state: State; tooltip:
 const activate: Activate = (orca) => {
   // ponytail: insertion-ordered Map as LRU; swap for a real cache only if hit rate matters.
   const cache = new Map<string, string>()
-  const stats: Stats = { suggested: 0, errors: 0, lastMs: null, lastError: null }
+  const stats: Stats = { suggested: 0, errors: 0, slow: 0, lastMs: null, lastError: null, lastSlow: false }
+  let lastLog = { message: '', at: 0 }
   let inflight: AbortController | null = null
+
+  // Why: a provider that is down would otherwise log on every typing pause.
+  function logFailure(message: string): void {
+    const now = Date.now()
+    if (message === lastLog.message && now - lastLog.at < LOG_REPEAT_MS) {
+      return
+    }
+    lastLog = { message, at: now }
+    orca.log(`completion failed: ${message}`)
+  }
 
   async function refreshStatus(): Promise<void> {
     const { state, tooltip } = statusOf(await readConfig(orca), stats)
@@ -121,6 +146,7 @@ const activate: Activate = (orca) => {
       const suggestion = await complete(config.provider, event, signal)
       stats.lastMs = Date.now() - startedAt
       stats.lastError = null
+      stats.lastSlow = false
       if (!suggestion) {
         void refreshStatus()
         return
@@ -133,11 +159,17 @@ const activate: Activate = (orca) => {
       }
       return next({ ...event, suggestion })
     } catch (error) {
-      if (!controller.signal.aborted) {
+      if (error instanceof Error && error.name === 'TimeoutError') {
+        // Why: slowness is expected with some providers and is shown on the status item, not logged.
+        stats.slow += 1
+        stats.lastSlow = true
+        void refreshStatus()
+      } else if (!controller.signal.aborted) {
         const message = error instanceof Error ? error.message : String(error)
-        orca.log(`completion failed: ${message}`)
+        logFailure(message)
         stats.errors += 1
         stats.lastError = message.slice(0, ERROR_TEXT_CHARS)
+        stats.lastSlow = false
         void refreshStatus()
       }
       return
@@ -161,6 +193,7 @@ const activate: Activate = (orca) => {
     }
     cache.clear()
     stats.lastError = null
+    stats.lastSlow = false
     void refreshStatus()
     return { hasKey: Boolean(trimmed) }
   })
@@ -171,6 +204,7 @@ const activate: Activate = (orca) => {
     const enabled = (await orca.settings.get('enabled')) !== false
     await orca.settings.set('enabled', !enabled)
     stats.lastError = null
+    stats.lastSlow = false
     await refreshStatus()
     return `Autocomplete ${enabled ? 'off' : 'on'}`
   })

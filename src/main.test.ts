@@ -167,3 +167,32 @@ test('the toggle command flips enabled and updates the status item', async () =>
   assert.equal(await worker.command('toggle'), 'Autocomplete on')
   assert.equal(worker.settings.enabled, true)
 })
+
+test('a timeout shows as slow on the status item and is not logged', async () => {
+  const real = globalThis.fetch
+  globalThis.fetch = async () => {
+    throw new DOMException('The operation was aborted due to timeout', 'TimeoutError')
+  }
+  try {
+    const worker = await mountWorker()
+    assert.deepEqual(await worker.fire(asked), asked)
+    const status = await worker.lastStatus()
+    assert.equal(status?.tone, 'warning')
+    assert.equal(status?.text, 'slow')
+    assert.deepEqual(worker.logs, [])
+  } finally {
+    globalThis.fetch = real
+  }
+})
+
+test('the same failure is logged once, not on every typing pause', async () => {
+  const restore = stubFetch(500, {})
+  try {
+    const worker = await mountWorker()
+    await worker.fire(asked)
+    await worker.fire({ ...asked, prefix: 'const y = ' })
+    assert.equal(worker.logs.length, 1)
+  } finally {
+    restore()
+  }
+})
