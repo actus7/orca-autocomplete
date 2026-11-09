@@ -138,11 +138,23 @@ export function registerInlineAi(
     freeInlineCompletions() {}
   })
 
+  // Monaco takes a suggestion a word at a time with Ctrl+Right and has a command for a line, but no key for it.
+  const acceptLine = editor.addAction({
+    id: 'orcaAutocomplete.acceptLine',
+    label: 'Autocomplete: accept the next line of the suggestion',
+    keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.RightArrow],
+    precondition: 'inlineSuggestionVisible',
+    run: () => {
+      editor.trigger('orcaAutocomplete', 'editor.action.inlineSuggest.acceptNextLine', {})
+    }
+  })
+
   return {
     dispose() {
       provider.dispose()
       accepted.dispose()
       changes.dispose()
+      acceptLine.dispose()
     }
   }
 }

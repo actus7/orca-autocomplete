@@ -8,7 +8,9 @@ import { NATIVE_OPTIONS, PLUGIN_OPTIONS, settingOptions, themeFor, type OrcaEdit
 import { smallestEdit } from './edits.ts'
 import { startLanguageServer } from './lsp.ts'
 import { grammarLoaders, grammarOf } from './languages.generated.ts'
+import { registerPostfix } from './postfix.ts'
 import { prepareLanguageService, stepAsideBuiltInTypeScript, workerFileFor } from './services.ts'
+import { registerSnippets } from './snippets.ts'
 import { followOrcaTheme, isDark } from './theme.ts'
 
 const page = window.__LANGUAGE__ ?? 'plaintext'
@@ -62,6 +64,9 @@ async function start(): Promise<void> {
   // The suggestion prompt names the file; a frame never learns the real name, so use its type.
   const fileName = (): string => `untitled${GRAMMARS.find((entry) => entry.id === model.getLanguageId())?.extensions[0] ?? ''}`
   registerInlineAi(monaco, editor, fileName)
+  // The part that needs no model and no server: snippets and postfix templates, with the AI off as with it on.
+  registerSnippets(monaco)
+  registerPostfix(monaco)
 
   // A language server installed on this computer, when there is one and the file is in a workspace.
   const grammar = GRAMMARS.find((entry) => entry.id === language)

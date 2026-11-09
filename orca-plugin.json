@@ -2,9 +2,9 @@
   "manifestVersion": 2,
   "id": "autocomplete",
   "name": "Autocomplete",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "execution": "trusted-worker",
-  "description": "Gray inline suggestions as you type, powered by the AI provider you choose: OpenAI, Anthropic, OpenRouter, Ollama or any compatible API.",
+  "description": "Gray inline suggestions as you type, powered by the AI provider you choose (OpenAI, Anthropic, OpenRouter, Mistral, Ollama or any compatible API), plus snippets, postfix templates and language servers with the AI off.",
   "license": "MIT",
   "repository": "https://github.com/actus7/orca-autocomplete",
   "engines": {
