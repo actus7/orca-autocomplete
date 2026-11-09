@@ -602,3 +602,26 @@ test('a timeout is recorded as a slow sample, so a slow model never looks fast',
     globalThis.fetch = real
   }
 })
+
+type Destination = { destination: string; host: string }
+const destinationOf = async (settings: Json, secrets: Record<string, string> = {}): Promise<Destination> =>
+  (await (await mountWorker(settings, secrets)).request('status.get')) as Destination
+
+// Why this matters: it is the one thing a person most wants to know about a provider, so it must never be wrong.
+test('the status says where the code goes: nowhere, this computer, or a server elsewhere', async () => {
+  const ollamaHere = { ...baseSettings, format: 'ollama', baseUrl: 'http://localhost:11434/v1' }
+  assert.equal((await destinationOf(ollamaHere)).destination, 'local')
+  assert.equal((await destinationOf({ ...ollamaHere, baseUrl: 'http://127.0.0.1:11434/v1' })).destination, 'local')
+  assert.equal((await destinationOf({ ...ollamaHere, baseUrl: 'http://[::1]:11434/v1' })).destination, 'local')
+  // A server elsewhere on the network is not this computer.
+  assert.deepEqual(await destinationOf({ ...ollamaHere, baseUrl: 'http://192.168.1.5:11434/v1' }).then((d) => [d.destination, d.host]), ['remote', '192.168.1.5:11434'])
+  const openaiThere = { ...baseSettings, format: 'openai', baseUrl: 'https://api.openai.com/v1' }
+  assert.equal((await destinationOf(openaiThere, { apiKey: 'k' })).destination, 'remote')
+})
+
+test('nothing is said to be sent when the AI is off or cannot ask yet', async () => {
+  const openaiThere = { ...baseSettings, format: 'openai', baseUrl: 'https://api.openai.com/v1' }
+  assert.equal((await destinationOf({ ...openaiThere, enabled: false }, { apiKey: 'k' })).destination, 'none', 'switched off')
+  assert.equal((await destinationOf(openaiThere)).destination, 'none', 'a provider that needs a key, without one')
+  assert.equal((await destinationOf({ enabled: true, format: 'openai', baseUrl: '', model: '' })).destination, 'none', 'not set up')
+})

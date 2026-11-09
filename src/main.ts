@@ -1,6 +1,6 @@
 import type { Activate, OrcaWorkerApi } from 'orca/worker'
 import { complete, parseFormat, type CompletionContext, type Provider, type ProviderFormat } from './complete.ts'
-import { explainFailure } from './explain.ts'
+import { explainFailure, isLoopbackHost } from './explain.ts'
 import { pickLocale, translator, type Translate } from './i18n.ts'
 import { LspManager } from './lsp/manager.ts'
 import { EditorSettingsWatcher } from './orca-editor/watcher.ts'
@@ -107,6 +107,14 @@ function keyMissing(config: Config): boolean {
   return presetFor(config.provider.format, config.provider.baseUrl).keyKind === 'required' && !config.provider.apiKey
 }
 
+/** Whether any code leaves the computer, and if so where: what the person most wants to know about a provider. */
+function destinationOf(config: Config | null): 'none' | 'local' | 'remote' {
+  if (!config || !config.enabled || keyMissing(config)) {
+    return 'none'
+  }
+  return isLoopbackHost(new URL(config.provider.baseUrl).host) ? 'local' : 'remote'
+}
+
 function stateOf(config: Config | null, stats: Stats): State {
   if (!config) {
     return 'setup'
@@ -193,6 +201,7 @@ const activate: Activate = (orca) => {
       reason: stats.lastError,
       host: config ? new URL(config.provider.baseUrl).host : '',
       model: config?.provider.model ?? '',
+      destination: destinationOf(config),
       hasKey: Boolean(await savedKey(orca, String((await orca.settings.get('baseUrl')) ?? '')))
     }
   }

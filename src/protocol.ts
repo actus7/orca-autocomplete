@@ -47,6 +47,8 @@ declare module 'orca' {
     host: string
     model: string
     hasKey: boolean
+    /** Where the code near the cursor goes: nowhere (AI off or not set up), this computer, or a server elsewhere. */
+    destination: 'none' | 'local' | 'remote'
   }
 
   interface PluginRequests {

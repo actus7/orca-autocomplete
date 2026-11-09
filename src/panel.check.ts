@@ -29,6 +29,7 @@ function snapshot(fields: Record<string, unknown>) {
     host: 'api.openai.com',
     model: 'gpt-4o-mini',
     hasKey: true,
+    destination: 'remote',
     ...fields
   }
 }
@@ -59,7 +60,7 @@ export default defineCheck({
   'pick-model': {
     settings: { ...openai, baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5-coder:1.5b' },
     requests: {
-      'status.get': snapshot({ state: 'setup', host: 'localhost:11434', model: 'qwen2.5-coder:1.5b', hasKey: false }),
+      'status.get': snapshot({ state: 'setup', host: 'localhost:11434', model: 'qwen2.5-coder:1.5b', hasKey: false, destination: 'none' }),
       'models.list': {
         ok: true,
         message: '',
@@ -96,6 +97,6 @@ export default defineCheck({
   },
   off: {
     settings: { ...openai, enabled: false },
-    requests: { 'status.get': snapshot({ state: 'off', lastMs: 612, suggested: 14 }) }
+    requests: { 'status.get': snapshot({ state: 'off', lastMs: 612, suggested: 14, destination: 'none' }) }
   }
 })

@@ -4,6 +4,11 @@ import type { Translate } from './i18n.ts'
 
 const LOCAL_HOST = /^(localhost|127\.|\[?::1)/i
 
+/** Whether a host (with or without a port) is this computer itself. A server elsewhere on the network is not. */
+export function isLoopbackHost(host: string): boolean {
+  return LOCAL_HOST.test(host)
+}
+
 export function explainFailure(error: unknown, t: Translate, host: string, timeoutMs: number, format?: ProviderFormat): string {
   const seconds = (timeoutMs / 1000).toString()
   if (error instanceof ProviderHttpError) {

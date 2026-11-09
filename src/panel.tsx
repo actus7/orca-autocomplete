@@ -627,6 +627,7 @@ export default function Panel() {
         <Heading>{tr('title')}</Heading>
         {state ? <Badge tone={TONES[state]}>{tr(`state.${state}`)}</Badge> : null}
       </Row>
+      {current ? <Text muted size="sm">{tr(`dest.${current.destination}`, { host: current.host })}</Text> : null}
       <Switch
         label={tr('switch')}
         checked={read(enabled)}
