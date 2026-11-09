@@ -159,3 +159,32 @@ export function toDocumentSymbols(symbols: LspSymbol[] | null | undefined): unkn
     }
   })
 }
+
+/** Hover or documentation text of any LSP shape as one Markdown value, or undefined when there is none. */
+export function markdownValue(contents: Parameters<typeof toMarkdown>[0]): { value: string } | undefined {
+  const text = toMarkdown(contents).join('\n\n')
+  return text ? { value: text } : undefined
+}
+
+export type LspCompletionDetails = {
+  detail?: string
+  documentation?: Parameters<typeof toMarkdown>[0]
+  additionalTextEdits?: LspTextEdit[]
+}
+
+/**
+ * What a server fills in when asked to resolve a completion item: the documentation, a detail line and,
+ * above all, the edits that go with picking it (the import that makes a symbol from another file usable).
+ * Only what the server gave is returned, so nothing already known is overwritten with nothing.
+ */
+export function completionDetails(resolved: LspCompletionDetails | null | undefined) {
+  if (!resolved) {
+    return {}
+  }
+  const documentation = markdownValue(resolved.documentation)
+  return {
+    ...(resolved.detail ? { detail: resolved.detail } : {}),
+    ...(documentation ? { documentation } : {}),
+    ...(resolved.additionalTextEdits?.length ? { additionalTextEdits: resolved.additionalTextEdits.map(toMonacoEdit) } : {})
+  }
+}

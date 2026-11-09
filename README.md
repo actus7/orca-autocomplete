@@ -104,6 +104,7 @@ O painel, a barra de status e os avisos aparecem em português quando o Orca est
 npm install
 npm test            # worker, language server bridge, editor logic (Node 22.18+)
 npm run typecheck   # types for the worker, the panel and the editor
+npm run test:browser # runs the editor code in a real Chrome/Chromium/Edge (about 15 s; skips itself if there is none)
 npm run build       # bundles Monaco and the editor into editor/dist (commit the result)
 npm run bench -- --base-url http://localhost:11434/v1 --model qwen2.5-coder:1.5b --yes   # see bench/run.mjs
 ```

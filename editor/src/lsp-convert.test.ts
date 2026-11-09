@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import {
+  completionDetails,
   completionKindName,
   fromLspRange,
+  markdownValue,
   markerSeverity,
   normalizeLocations,
   splitWorkspaceEdit,
@@ -86,4 +88,35 @@ test('toDocumentSymbols converts a tree and a flat list', () => {
   const flat = toDocumentSymbols([{ name: 'f', kind: 12, location: { range }, containerName: 'mod' }]) as { detail: string }[]
   assert.equal(flat[0].detail, 'mod')
   assert.deepEqual(toDocumentSymbols(null), [])
+})
+
+test('markdownValue joins every part of the documentation and says nothing when there is none', () => {
+  assert.deepEqual(markdownValue('plain'), { value: 'plain' })
+  assert.deepEqual(markdownValue(['a', 'b']), { value: 'a\n\nb' })
+  assert.equal(markdownValue(undefined), undefined)
+  assert.equal(markdownValue(''), undefined)
+})
+
+// Why: a TypeScript server only says which import goes with a suggestion when asked to resolve it.
+test('what a server resolves for a completion item is turned into what Monaco applies when it is picked', () => {
+  const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }
+  const resolved = {
+    detail: 'class Money',
+    documentation: { kind: 'markdown', value: 'An amount.' },
+    additionalTextEdits: [{ range, newText: "import { Money } from './money'\n" }]
+  }
+  assert.deepEqual(completionDetails(resolved), {
+    detail: 'class Money',
+    documentation: { value: 'An amount.' },
+    additionalTextEdits: [
+      { range: { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 1 }, text: "import { Money } from './money'\n" }
+    ]
+  })
+})
+
+test('a resolved item that adds nothing adds nothing, so what the list already showed stays', () => {
+  assert.deepEqual(completionDetails({}), {})
+  assert.deepEqual(completionDetails({ additionalTextEdits: [], documentation: '' }), {})
+  assert.deepEqual(completionDetails(null), {})
+  assert.deepEqual(completionDetails(undefined), {})
 })

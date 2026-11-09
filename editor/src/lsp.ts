@@ -3,8 +3,10 @@
 // address. Only what the server says it supports is registered, so nothing is offered that fails.
 import type * as Monaco from 'monaco-editor/esm/vs/editor/edcore.main'
 import {
+  completionDetails,
   completionKindName,
   fromLspRange,
+  markdownValue,
   normalizeLocations,
   splitWorkspaceEdit,
   toDocumentSymbols,
@@ -105,13 +107,12 @@ export async function startLanguageServer(
   const atCursor = (position: Monaco.Position) => ({ position: toLspPosition(position) })
   const ours = (candidate: Monaco.editor.ITextModel): boolean => candidate === model
   const edits = (list: LspTextEdit[] | null): Monaco.languages.TextEdit[] => (list ?? []).map(toMonacoEdit)
-  const markdown = (value: unknown): { value: string } | undefined => {
-    const text = toMarkdown(value as never).join('\n\n')
-    return text ? { value: text } : undefined
-  }
+  const markdown = (value: unknown) => markdownValue(value as never)
 
   // --- completion ---
   if (capabilities.completionProvider) {
+    // The server's own item for each suggestion shown: resolving it later needs exactly what the server sent.
+    const serverItems = new WeakMap<object, unknown>()
     monaco.languages.registerCompletionItemProvider('*', {
       triggerCharacters: capabilities.completionProvider.triggerCharacters,
       async provideCompletionItems(m, position, context) {
@@ -137,7 +138,7 @@ export async function startLanguageServer(
                 ? fromLspRange(edit.range)
                 : { insert: fromLspRange(edit.insert), replace: fromLspRange(edit.replace) }
               : fallback
-            return {
+            const suggestion = {
               label: item.label,
               kind: monaco.languages.CompletionItemKind[completionKindName(item.kind) as keyof typeof monaco.languages.CompletionItemKind],
               detail: item.detail,
@@ -152,9 +153,20 @@ export async function startLanguageServer(
               additionalTextEdits: item.additionalTextEdits ? edits(item.additionalTextEdits) : undefined,
               tags: item.deprecated || item.tags?.includes(1) ? [1] : undefined
             }
+            serverItems.set(suggestion, item)
+            return suggestion
           })
         }
-      }
+      },
+      // Why: a TypeScript server says which import goes with a symbol only when asked to resolve it, so without
+      // this, picking a symbol from another file gives the name and no import.
+      resolveCompletionItem: capabilities.completionProvider.resolveProvider
+        ? async (suggestion) => {
+            const raw = serverItems.get(suggestion)
+            const resolved = raw ? await ask('completionItem/resolve', raw as Record<string, unknown>) : null
+            return { ...suggestion, ...completionDetails(resolved) }
+          }
+        : undefined
     })
   }
 
