@@ -3,7 +3,7 @@
 Inline AI code completion (ghost text, like Copilot) in Orca's editor. Bring your own provider:
 anything that speaks the **OpenAI** (`/chat/completions`) or **Anthropic** (`/v1/messages`) API.
 
-> Needs an Orca release that includes the `editor.inlineCompletion` plugin hook (`engines.orca >=1.4.255`).
+> Needs an Orca release that includes the `editor.inlineCompletion` plugin hook (`engines.orca >=1.4.256`).
 
 ## Setup
 

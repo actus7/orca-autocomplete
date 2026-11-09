@@ -8,7 +8,7 @@
   "license": "MIT",
   "repository": "https://github.com/actus7/orca-autocomplete",
   "engines": {
-    "orca": ">=1.4.255"
+    "orca": ">=1.4.256"
   },
   "main": "src/main.ts",
   "contributes": {
