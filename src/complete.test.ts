@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import {
   buildRequest,
   cleanSuggestion,
+  trimSuffixOverlap,
   complete,
   extractText,
   type CompletionContext,
@@ -85,4 +86,24 @@ test('complete returns cleaned text and throws on HTTP errors without leaking th
     assert.equal(error.message, 'provider answered HTTP 401')
     return true
   })
+})
+
+test('cleanSuggestion keeps the first fenced block and drops chatter after it', () => {
+  assert.equal(cleanSuggestion('```ts\nfoo()\n```\n\nskipped: tests'), 'foo()')
+})
+
+test('trimSuffixOverlap cuts code the model repeated from after the cursor', () => {
+  const suffix = '\n}\n\nfunction isEven(n: number): boolean {\n  \n}\n'
+  assert.equal(trimSuffixOverlap('a + b\n}', suffix), 'a + b')
+  assert.equal(
+    trimSuffixOverlap('a + b\n}\n\nfunction isEven(n: number): boolean {\n  return n % 2 === 0\n}', suffix),
+    'a + b'
+  )
+})
+
+test('trimSuffixOverlap leaves legitimate same-line tails and unrelated text alone', () => {
+  assert.equal(trimSuffixOverlap("foo('x')", ')\n'), "foo('x')")
+  assert.equal(trimSuffixOverlap('foo()\n', ')\n'), 'foo()\n')
+  assert.equal(trimSuffixOverlap('a + b', ';\n'), 'a + b')
+  assert.equal(trimSuffixOverlap('x', ''), 'x')
 })

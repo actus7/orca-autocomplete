@@ -26,8 +26,10 @@ const ANTHROPIC_VERSION = '2023-06-01'
 
 const SYSTEM_PROMPT =
   `You are a code completion engine. The user sends a file with ${CURSOR} marking the cursor. ` +
-  'Reply with ONLY the text to insert at the cursor: no explanation, no markdown fences, ' +
-  'and do not repeat code that is already before or after the cursor. Reply with nothing if unsure.'
+  'Reply with ONLY the text to insert at the cursor: usually the rest of the current line or ' +
+  'statement, or a short block when the cursor sits in an empty body. Stop where the cursor\'s ' +
+  'statement ends: never write code that belongs after it, and never repeat code that is already ' +
+  'before or after the cursor. No explanation and no markdown fences. Reply with nothing if unsure.'
 
 export function buildUserPrompt(ctx: CompletionContext): string {
   const language = ctx.languageId ? ` (${ctx.languageId})` : ''
@@ -104,10 +106,35 @@ export function extractText(format: ProviderFormat, json: unknown): string {
   return typeof message?.content === 'string' ? message.content : ''
 }
 
-/** Strips a markdown fence some models add despite the instructions. */
+/** Keeps the first fenced block when a model wraps its answer, and drops chatter after it. */
 export function cleanSuggestion(raw: string): string {
-  const fenced = /^\s*```[^\n]*\n([\s\S]*?)\n?```\s*$/.exec(raw)
+  const fenced = /^\s*```[^\n]*\n([\s\S]*?)\n?```[\s\S]*$/.exec(raw)
   return fenced ? fenced[1] : raw
+}
+
+const OVERLAP_PROBE_CHARS = 30
+const OVERLAP_MIN_PROBE_CHARS = 8
+
+/**
+ * Chat models often re-emit code that already follows the cursor. Cuts that repeat: where the
+ * suggestion contains the start of the suffix, or ends with whole lines the suffix begins with.
+ * Same-line tails such as a closing paren are left alone, since they may be legitimate.
+ */
+export function trimSuffixOverlap(suggestion: string, suffix: string): string {
+  const probe = suffix.trimStart().slice(0, OVERLAP_PROBE_CHARS)
+  if (probe.length >= OVERLAP_MIN_PROBE_CHARS) {
+    const at = suggestion.indexOf(probe)
+    if (at > 0) {
+      return suggestion.slice(0, at).trimEnd()
+    }
+  }
+  for (let length = Math.min(suffix.length, suggestion.length); length >= 2; length -= 1) {
+    const head = suffix.slice(0, length)
+    if (head.startsWith('\n') && suggestion.endsWith(head)) {
+      return suggestion.slice(0, suggestion.length - length)
+    }
+  }
+  return suggestion
 }
 
 export type FetchLike = (
@@ -127,5 +154,5 @@ export async function complete(
     // Why status only: the body can echo the prompt, which holds the person's code.
     throw new Error(`provider answered HTTP ${response.status}`)
   }
-  return cleanSuggestion(extractText(provider.format, await response.json()))
+  return trimSuffixOverlap(cleanSuggestion(extractText(provider.format, await response.json())), ctx.suffix)
 }
