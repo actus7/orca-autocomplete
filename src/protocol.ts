@@ -26,6 +26,11 @@ declare module 'orca' {
       input: { format: 'openai' | 'anthropic'; baseUrl: string; key: string }
       output: { ok: boolean; models: string[]; message: string }
     }
+    /** One suggestion for the text around the cursor of the plugin's own editor; '' when there is none. */
+    'completion.ask': {
+      input: { path: string; languageId: string; prefix: string; suffix: string }
+      output: { suggestion: string }
+    }
     /** Times one real completion per model (the panel sends a few at a time); nothing is saved. */
     'models.bench': {
       input: { format: 'openai' | 'anthropic'; baseUrl: string; key: string; models: string[] }

@@ -8,15 +8,10 @@
   "license": "MIT",
   "repository": "https://github.com/actus7/orca-autocomplete",
   "engines": {
-    "orca": ">=1.4.256"
+    "orca": ">=1.4.248"
   },
   "main": "src/main.ts",
   "contributes": {
-    "hooks": [
-      {
-        "event": "editor.inlineCompletion"
-      }
-    ],
     "panels": [
       {
         "id": "setup",
@@ -92,6 +87,225 @@
         "tone": "neutral",
         "tooltip": "Autocomplete",
         "command": "toggle"
+      }
+    ],
+    "customEditors": [
+      {
+        "id": "code-typescript",
+        "title": "Autocomplete",
+        "extensions": [
+          ".ts",
+          ".tsx",
+          ".mts",
+          ".cts"
+        ],
+        "entry": "editor/pages/typescript.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-javascript",
+        "title": "Autocomplete",
+        "extensions": [
+          ".js",
+          ".jsx",
+          ".mjs",
+          ".cjs"
+        ],
+        "entry": "editor/pages/javascript.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-python",
+        "title": "Autocomplete",
+        "extensions": [
+          ".py",
+          ".pyi",
+          ".pyw"
+        ],
+        "entry": "editor/pages/python.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-go",
+        "title": "Autocomplete",
+        "extensions": [
+          ".go"
+        ],
+        "entry": "editor/pages/go.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-rust",
+        "title": "Autocomplete",
+        "extensions": [
+          ".rs"
+        ],
+        "entry": "editor/pages/rust.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-java",
+        "title": "Autocomplete",
+        "extensions": [
+          ".java"
+        ],
+        "entry": "editor/pages/java.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-kotlin",
+        "title": "Autocomplete",
+        "extensions": [
+          ".kt",
+          ".kts"
+        ],
+        "entry": "editor/pages/kotlin.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-csharp",
+        "title": "Autocomplete",
+        "extensions": [
+          ".cs",
+          ".csx"
+        ],
+        "entry": "editor/pages/csharp.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-cpp",
+        "title": "Autocomplete",
+        "extensions": [
+          ".c",
+          ".h",
+          ".cpp",
+          ".cc",
+          ".cxx",
+          ".hpp",
+          ".hh",
+          ".hxx"
+        ],
+        "entry": "editor/pages/cpp.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-php",
+        "title": "Autocomplete",
+        "extensions": [
+          ".php"
+        ],
+        "entry": "editor/pages/php.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-ruby",
+        "title": "Autocomplete",
+        "extensions": [
+          ".rb",
+          ".rake",
+          ".gemspec"
+        ],
+        "filenames": [
+          "Gemfile",
+          "Rakefile"
+        ],
+        "entry": "editor/pages/ruby.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-swift",
+        "title": "Autocomplete",
+        "extensions": [
+          ".swift"
+        ],
+        "entry": "editor/pages/swift.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-shell",
+        "title": "Autocomplete",
+        "extensions": [
+          ".sh",
+          ".bash",
+          ".zsh"
+        ],
+        "entry": "editor/pages/shell.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-sql",
+        "title": "Autocomplete",
+        "extensions": [
+          ".sql"
+        ],
+        "entry": "editor/pages/sql.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-html",
+        "title": "Autocomplete",
+        "extensions": [
+          ".html",
+          ".htm"
+        ],
+        "entry": "editor/pages/html.html",
+        "priority": "default",
+        "frame": "isolated"
+      },
+      {
+        "id": "code-generic",
+        "title": "Autocomplete",
+        "extensions": [
+          ".css",
+          ".scss",
+          ".less",
+          ".xml",
+          ".yaml",
+          ".yml",
+          ".md",
+          ".dart",
+          ".lua",
+          ".r",
+          ".ps1",
+          ".psm1",
+          ".bat",
+          ".scala",
+          ".ex",
+          ".exs",
+          ".clj",
+          ".cljs",
+          ".pl",
+          ".pm",
+          ".fs",
+          ".fsx",
+          ".jl",
+          ".tf",
+          ".hcl",
+          ".proto",
+          ".graphql",
+          ".gql",
+          ".dockerfile"
+        ],
+        "filenames": [
+          "Dockerfile"
+        ],
+        "entry": "editor/pages/generic.html",
+        "priority": "default",
+        "frame": "isolated"
       }
     ]
   },

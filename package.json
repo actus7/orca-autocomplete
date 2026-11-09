@@ -2,5 +2,12 @@
   "name": "orca-autocomplete",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test src/" }
+  "scripts": {
+    "build": "node editor/build.mjs",
+    "test": "node --test src/ editor/"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "monaco-editor": "^0.52.2"
+  }
 }

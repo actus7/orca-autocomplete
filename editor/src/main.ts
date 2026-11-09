@@ -1,0 +1,118 @@
+// The plugin's editor: Monaco in Orca's isolated frame, bound to the open file through Orca's
+// document session, with AI ghost text from the plugin's worker.
+import * as monaco from 'monaco-editor/esm/vs/editor/edcore.main'
+import { GRAMMARS } from '../languages.mjs'
+import { registerInlineAi } from './ai.ts'
+import { detectLanguage } from './detect.ts'
+import { smallestEdit } from './edits.ts'
+import { grammarLoaders, grammarOf } from './languages.generated.ts'
+import { followOrcaTheme } from './theme.ts'
+
+const page = window.__LANGUAGE__ ?? 'plaintext'
+// Re-reading the content for the language is cheap but pointless on every keystroke.
+const DETECT_DELAY_MS = 800
+const root = document.getElementById('root') as HTMLElement
+
+// Monaco computes some things (word ranges, links, diffs) in a worker; ours sits beside this file.
+window.MonacoEnvironment = {
+  getWorker: () => new Worker(new URL('./editor.worker.js', import.meta.url), { type: 'module' })
+}
+
+async function start(): Promise<void> {
+  // Resolves once Orca has sent the theme and the first document.
+  const session = await orca.document.session()
+  followOrcaTheme()
+
+  // The generic editor does not know the language until it sees the content.
+  const generic = page === 'generic'
+  const language = generic ? detectLanguage(session.value) : page
+  // Why: only this file's grammar loads, so a Python file does not download the C++ rules.
+  await grammarLoaders[grammarOf[language]]?.()
+
+  const model = monaco.editor.createModel(session.value, language)
+  const editor = monaco.editor.create(root, {
+    model,
+    theme: 'orca',
+    readOnly: session.readOnly,
+    automaticLayout: true,
+    fontFamily: "'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas, monospace",
+    fontLigatures: true,
+    fontSize: 13,
+    lineHeight: 20,
+    padding: { top: 12, bottom: 12 },
+    tabSize: 2,
+    detectIndentation: true,
+    minimap: { enabled: true, renderCharacters: false, maxColumn: 100 },
+    scrollBeyondLastLine: false,
+    smoothScrolling: true,
+    cursorBlinking: 'smooth',
+    cursorSmoothCaretAnimation: 'on',
+    bracketPairColorization: { enabled: true },
+    guides: { bracketPairs: true, indentation: true },
+    stickyScroll: { enabled: true },
+    renderWhitespace: 'selection',
+    renderLineHighlight: 'all',
+    folding: true,
+    foldingHighlight: false,
+    linkedEditing: true,
+    formatOnPaste: true,
+    wordWrap: 'off',
+    accessibilitySupport: 'auto',
+    inlineSuggest: { enabled: true, mode: 'subwordSmart', showToolbar: 'onHover' },
+    // Why: the AI's gray text is the main suggestion. A word-completion popup or its inline preview
+    // would take its place, so the menu opens only on a trigger character or Ctrl+Space.
+    suggest: { preview: false, showStatusBar: true },
+    quickSuggestions: false,
+    parameterHints: { enabled: true },
+    hover: { enabled: true, delay: 350 }
+  })
+
+  // The suggestion prompt names the file; a frame never learns the real name, so use its type.
+  const fileName = (): string => `untitled${GRAMMARS.find((entry) => entry.id === model.getLanguageId())?.extensions[0] ?? ''}`
+  registerInlineAi(monaco, fileName)
+
+  if (generic) {
+    // A new empty file gets its language when it first has something to recognise.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    model.onDidChangeContent(() => {
+      clearTimeout(timer)
+      timer = setTimeout(async () => {
+        const detected = detectLanguage(model.getValue())
+        if (detected !== model.getLanguageId()) {
+          await grammarLoaders[grammarOf[detected]]?.()
+          monaco.editor.setModelLanguage(model, detected)
+        }
+      }, DETECT_DELAY_MS)
+    })
+  }
+
+  // Orca owns the file; keep the editor and Orca's copy equal without echoing our own edits back.
+  let applying = false
+  model.onDidChangeContent(() => {
+    if (!applying) {
+      session.change(model.getValue())
+    }
+  })
+  session.onReplace((text) => {
+    const edit = smallestEdit(model.getValue(), text)
+    if (!edit) {
+      return
+    }
+    applying = true
+    try {
+      const range = monaco.Range.fromPositions(model.getPositionAt(edit.start), model.getPositionAt(edit.end))
+      // Why: a minimal edit keeps the cursor, scroll position and undo history of the person.
+      model.pushEditOperations([], [{ range, text: edit.text }], () => null)
+    } finally {
+      applying = false
+    }
+  })
+
+  editor.focus()
+}
+
+start().catch((error: unknown) => {
+  // Orca copies frame errors into the plugin's log; also say it on screen so the tab is not blank.
+  console.error(error)
+  root.textContent = `Autocomplete could not start: ${error instanceof Error ? error.message : String(error)}`
+})

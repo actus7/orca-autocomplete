@@ -1,5 +1,5 @@
 import type { Activate, OrcaWorkerApi } from 'orca/worker'
-import { complete, type Provider, type ProviderFormat } from './complete.ts'
+import { complete, type CompletionContext, type Provider, type ProviderFormat } from './complete.ts'
 import { explainFailure } from './explain.ts'
 import { pickLocale, translator, type Translate } from './i18n.ts'
 import { BENCH_BATCH_SIZE, isExpectedAnswer, listModels, median } from './models.ts'
@@ -266,17 +266,18 @@ const activate: Activate = (orca) => {
     }
   }
 
-  orca.hooks.on('editor.inlineCompletion', async (event, next) => {
+  /** One suggestion for the text around a cursor; '' when there is none. Shared by the native hook and the editor. */
+  async function suggest(event: CompletionContext): Promise<string> {
     const config = await readConfig(orca)
     if (!config?.enabled || keyMissing(config)) {
-      return
+      return ''
     }
     const key = `${event.path}\n${event.prefix.slice(-300)}\n${event.suffix.slice(0, 100)}`
     const cached = cache.get(key)
     if (cached !== undefined) {
       cache.delete(key)
       cache.set(key, cached)
-      return next({ ...event, suggestion: cached })
+      return cached
     }
     // Why: only the newest keystroke's answer is ever shown, so stop the older request.
     inflight?.abort()
@@ -292,7 +293,7 @@ const activate: Activate = (orca) => {
       void recordUsage(config.provider.baseUrl, config.provider.model, stats.lastMs).catch(() => undefined)
       if (!suggestion) {
         void refreshStatus()
-        return
+        return ''
       }
       stats.suggested += 1
       void refreshStatus()
@@ -300,7 +301,7 @@ const activate: Activate = (orca) => {
       if (cache.size > CACHE_SIZE) {
         cache.delete(cache.keys().next().value as string)
       }
-      return next({ ...event, suggestion })
+      return suggestion
     } catch (error) {
       if (error instanceof Error && error.name === 'TimeoutError') {
         // Why: slowness is expected with some providers and is shown on the status item, not logged.
@@ -319,13 +320,25 @@ const activate: Activate = (orca) => {
         stats.lastSlow = false
         void refreshStatus()
       }
-      return
+      return ''
     } finally {
       if (inflight === controller) {
         inflight = null
       }
     }
-  })
+  }
+
+  // Why: an Orca older than the hook rejects the declaration; the editor path then still works.
+  try {
+    orca.hooks.on('editor.inlineCompletion', async (event, next) => {
+      const suggestion = await suggest(event)
+      return suggestion ? next({ ...event, suggestion }) : undefined
+    })
+  } catch (error) {
+    orca.log(`native inline completion hook unavailable: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  orca.panels.handle('completion.ask', async (context) => ({ suggestion: await suggest(context) }))
 
   orca.panels.handle('status.get', snapshot)
 
