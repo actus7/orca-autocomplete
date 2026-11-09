@@ -17,6 +17,23 @@ declare module 'orca' {
     minimap: boolean
   }
   export type StatusState = 'on' | 'off' | 'setup' | 'slow' | 'error'
+  export type StatsSnapshot = {
+    model: string
+    /** When counting started (ms since 1970). */
+    since: number
+    summary: {
+      shown: number
+      accepted: number
+      partial: number
+      kept: number
+      undone: number
+      stale: number
+      /** Milliseconds; null before the first answer. */
+      p50: number | null
+      p95: number | null
+      samples: number
+    }
+  }
   export type StatusSnapshot = {
     state: StatusState
     /** Milliseconds the last suggestion took, null before the first one. */
@@ -57,11 +74,23 @@ declare module 'orca' {
       input: Record<string, never>
       output: { settings: OrcaEditorSettings | null; source: string | null }
     }
-    /** One suggestion for the text around the cursor of the plugin's own editor; '' when there is none. */
+    /**
+     * One suggestion for the text around the cursor of the plugin's own editor; '' when there is none.
+     * `id` names the suggestion so the editor can report what became of it (`metrics.event`); 0 when there is none.
+     */
     'completion.ask': {
       input: { path: string; languageId: string; prefix: string; suffix: string }
-      output: { suggestion: string }
+      output: { suggestion: string; id: number }
     }
+    /** What became of a suggestion the editor showed. Kept on this computer only, for the statistics in the panel. */
+    'metrics.event': {
+      input: { id: number; kind: 'shown' | 'accepted' | 'partial' | 'kept' | 'undone' | 'stale' }
+      output: Record<string, never>
+    }
+    /** How the suggestions of the model in use have done so far. */
+    'stats.get': { input: Record<string, never>; output: StatsSnapshot }
+    /** Starts the statistics again from zero. */
+    'stats.reset': { input: Record<string, never>; output: Record<string, never> }
     /** Times one real completion per model (the panel sends a few at a time); nothing is saved. */
     'models.bench': {
       input: { format: 'openai' | 'anthropic'; baseUrl: string; key: string; models: string[] }

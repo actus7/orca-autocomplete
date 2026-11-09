@@ -22,6 +22,7 @@ import {
   Tabs,
   Text,
   type PanelContext,
+  type StatsSnapshot,
   type StatusSnapshot
 } from 'orca'
 import { pickLocale, translator } from './i18n.ts'
@@ -46,6 +47,7 @@ const TONES = { on: 'success', off: 'neutral', setup: 'warning', error: 'danger'
 type Outcome = { ok: boolean; message: string; ms: number | null }
 
 const status = atom<StatusSnapshot | null>(null)
+const stats = atom<StatsSnapshot | null>(null)
 const enabled = atom(true)
 const presetId = atom<PresetId>('openai')
 const baseUrl = atom('')
@@ -133,6 +135,15 @@ async function loadUsage(): Promise<void> {
   )
 }
 
+async function loadStats(): Promise<void> {
+  set(stats, await plugin.request('stats.get', {}))
+}
+
+async function resetStats(): Promise<void> {
+  await plugin.request('stats.reset', {})
+  await loadStats()
+}
+
 /** Times the given models a few at a time, so results (and the order of the list) fill in as they arrive. */
 async function benchModels(ids: string[]): Promise<void> {
   const run = ++benchRun
@@ -172,6 +183,7 @@ export function setup(ctx: PanelContext): void {
     const snapshot = await plugin.request('status.get', {})
     set(status, snapshot)
     void loadUsage().catch(() => undefined)
+    void loadStats().catch(() => undefined)
     if (canLoadModels(snapshot.hasKey)) {
       await loadModels()
     }
@@ -180,6 +192,7 @@ export function setup(ctx: PanelContext): void {
     plugin.on('status.changed', (snapshot) => {
       set(status, snapshot)
       void loadUsage().catch(() => undefined)
+      void loadStats().catch(() => undefined)
     }),
     settings.onDidChange(() => void loadSettings().catch(() => undefined))
   )
@@ -547,6 +560,43 @@ function ProviderForm(props: { hasKey: boolean }) {
   )
 }
 
+/** Whole percent of `part` in `whole`, or a dash when there is nothing to divide by. */
+function percent(part: number, whole: number): string {
+  return whole > 0 ? `${Math.round((part / whole) * 100)}%` : '–'
+}
+
+/** How the model in use has done in real use. Counted on this computer only. */
+function Statistics() {
+  const data = read(stats)
+  const s = data?.summary
+  const hasData = s !== undefined && s.shown + s.accepted + s.partial + s.stale + s.samples > 0
+  return (
+    <Collapsible title={tr('stats.title')}>
+      <Stack gap="xs">
+        {hasData && s && data ? (
+          <Stack gap="xs">
+            <Text size="sm">{tr('stats.shown', { count: s.shown })}</Text>
+            <Text size="sm">{tr('stats.accepted', { count: s.accepted, percent: percent(s.accepted, s.shown) })}</Text>
+            <Text size="sm">{tr('stats.partial', { count: s.partial })}</Text>
+            <Text size="sm">{tr('stats.kept', { count: s.kept, percent: percent(s.kept, s.accepted) })}</Text>
+            <Text size="sm">{tr('stats.undone', { count: s.undone })}</Text>
+            <Text size="sm">{tr('stats.stale', { count: s.stale })}</Text>
+            {s.p50 !== null && s.p95 !== null ? <Text size="sm">{tr('stats.latency', { p50: s.p50, p95: s.p95 })}</Text> : null}
+            <Text muted size="sm">{tr('stats.since', { date: new Date(data.since).toISOString().slice(0, 10) })}</Text>
+            <Row>
+              <Button variant="ghost" size="sm" icon="refresh" onPress={() => void resetStats()}>
+                {tr('stats.reset')}
+              </Button>
+            </Row>
+          </Stack>
+        ) : (
+          <Text muted size="sm">{tr('stats.none')}</Text>
+        )}
+      </Stack>
+    </Collapsible>
+  )
+}
+
 function Help() {
   return (
     <Collapsible title={tr('help.title')}>
@@ -603,6 +653,7 @@ export default function Panel() {
       >
         <ProviderForm hasKey={current?.hasKey ?? false} />
       </Collapsible>
+      <Statistics />
       <Help />
     </Stack>
   )

@@ -122,6 +122,82 @@ test('a remembered suggestion is not reused after the model changes', async () =
   }
 })
 
+const MODEL = 'localhost:11434|m'
+
+type StatsAnswer = { model: string; summary: { shown: number; accepted: number; partial: number; kept: number; undone: number; stale: number; p50: number | null; samples: number } }
+
+test('each suggestion gets an id, and what the editor reports about it is counted for its model', async () => {
+  const restore = stubFetch(200, { choices: [{ message: { content: '42' } }] })
+  try {
+    const worker = await mountWorker()
+    const { suggestion, id } = (await worker.request('completion.ask', asked)) as { suggestion: string; id: number }
+    assert.equal(suggestion, '42')
+    assert.ok(id > 0)
+    await worker.request('metrics.event', { id, kind: 'shown' })
+    await worker.request('metrics.event', { id, kind: 'accepted' })
+    await worker.request('metrics.event', { id, kind: 'kept' })
+    const { model, summary } = (await worker.request('stats.get')) as StatsAnswer
+    assert.equal(model, MODEL)
+    assert.deepEqual([summary.shown, summary.accepted, summary.kept, summary.undone], [1, 1, 1, 0])
+    assert.equal(summary.samples, 1, 'the answer time was recorded')
+  } finally {
+    restore()
+  }
+})
+
+// Why: the message comes from a page; an id the worker never gave out, or a kind it does not know, must not change anything.
+test('events with an unknown id or kind are ignored', async () => {
+  const restore = stubFetch(200, { choices: [{ message: { content: '42' } }] })
+  try {
+    const worker = await mountWorker()
+    const { id } = (await worker.request('completion.ask', asked)) as { id: number }
+    await worker.request('metrics.event', { id: id + 99, kind: 'shown' })
+    await worker.request('metrics.event', { id, kind: 'bogus' })
+    const { summary } = (await worker.request('stats.get')) as StatsAnswer
+    assert.deepEqual([summary.shown, summary.accepted, summary.partial, summary.stale], [0, 0, 0, 0])
+    // What was stored is the proof: no entry for the made-up id, and no field for the made-up kind.
+    const stored = worker.store.get('stats') as { models: Record<string, Record<string, unknown>> }
+    assert.deepEqual(Object.keys(stored.models), [MODEL])
+    assert.equal('bogus' in stored.models[MODEL], false)
+  } finally {
+    restore()
+  }
+})
+
+test('a request that a newer one replaced is counted as stale, and no id is given for no suggestion', async () => {
+  const real = globalThis.fetch
+  globalThis.fetch = ((_url: string, init: { signal: AbortSignal }) =>
+    new Promise<Response>((resolve, reject) => {
+      init.signal.addEventListener('abort', () => reject(init.signal.reason))
+      setTimeout(() => resolve(new Response(JSON.stringify({ choices: [{ message: { content: 'x' } }] }))), 40)
+    })) as typeof fetch
+  try {
+    const worker = await mountWorker()
+    const first = worker.request('completion.ask', { ...asked, prefix: 'one ' }) as Promise<{ id: number }>
+    const second = worker.request('completion.ask', { ...asked, prefix: 'two ' }) as Promise<{ id: number }>
+    assert.equal((await first).id, 0, 'the replaced request gave nothing')
+    assert.ok((await second).id > 0)
+    const { summary } = (await worker.request('stats.get')) as StatsAnswer
+    assert.equal(summary.stale, 1)
+  } finally {
+    globalThis.fetch = real
+  }
+})
+
+test('resetting the statistics starts them again from zero', async () => {
+  const restore = stubFetch(200, { choices: [{ message: { content: '42' } }] })
+  try {
+    const worker = await mountWorker()
+    const { id } = (await worker.request('completion.ask', asked)) as { id: number }
+    await worker.request('metrics.event', { id, kind: 'shown' })
+    await worker.request('stats.reset')
+    const { summary } = (await worker.request('stats.get')) as StatsAnswer
+    assert.deepEqual([summary.shown, summary.samples], [0, 0])
+  } finally {
+    restore()
+  }
+})
+
 test('nothing is suggested when disabled', async () => {
   const worker = await mountWorker({ ...baseSettings, enabled: false })
   assert.deepEqual(await worker.fire(asked), asked)

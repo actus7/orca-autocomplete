@@ -61,7 +61,7 @@ async function start(): Promise<void> {
 
   // The suggestion prompt names the file; a frame never learns the real name, so use its type.
   const fileName = (): string => `untitled${GRAMMARS.find((entry) => entry.id === model.getLanguageId())?.extensions[0] ?? ''}`
-  registerInlineAi(monaco, fileName)
+  registerInlineAi(monaco, editor, fileName)
 
   // A language server installed on this computer, when there is one and the file is in a workspace.
   const grammar = GRAMMARS.find((entry) => entry.id === language)

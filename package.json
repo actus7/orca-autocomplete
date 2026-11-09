@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "build": "node editor/build.mjs",
-    "test": "node --test src/ editor/",
+    "test": "node --test src/ editor/ bench/",
+    "bench": "node bench/run.mjs",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {

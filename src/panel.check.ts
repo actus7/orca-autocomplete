@@ -82,6 +82,18 @@ export default defineCheck({
       'models.list': longList
     }
   },
+  'with-statistics': {
+    settings: openai,
+    requests: {
+      'status.get': snapshot({ lastMs: 480, suggested: 120 }),
+      'models.list': modelList,
+      'stats.get': {
+        model: 'api.openai.com|gpt-4o-mini',
+        since: 1_760_000_000_000,
+        summary: { shown: 120, accepted: 31, partial: 9, kept: 24, undone: 7, stale: 12, p50: 480, p95: 1210, samples: 50 }
+      }
+    }
+  },
   off: {
     settings: { ...openai, enabled: false },
     requests: { 'status.get': snapshot({ state: 'off', lastMs: 612, suggested: 14 }) }

@@ -6,6 +6,7 @@ import { LspManager } from './lsp/manager.ts'
 import { EditorSettingsWatcher } from './orca-editor/watcher.ts'
 import { BENCH_BATCH_SIZE, isExpectedAnswer, listModels, median } from './models.ts'
 import { presetFor, sameAddress } from './presets.ts'
+import { bump, emptyStats, EVENT_KINDS, isStats, summarize, withLatency, type Stats as Metrics } from './metrics.ts'
 
 const SECRET_KEY = 'apiKey'
 const LOCALE_KEY = 'locale'
@@ -34,6 +35,10 @@ const LOG_REPEAT_MS = 60_000
 const USAGE_KEY = 'usage'
 const USAGE_SAMPLES = 9
 const USAGE_MODELS = 40
+// How suggestions did in real use (shown, accepted, kept ...), kept on this computer only.
+const STATS_KEY = 'stats'
+// A suggestion is judged for about half a minute after it is shown; its id is only needed that long.
+const SUGGESTION_IDS_KEPT = 200
 
 type Usage = Record<string, number[]>
 
@@ -44,6 +49,12 @@ function isUsage(value: unknown): value is Usage {
     Object.values(value).every((v) => Array.isArray(v) && v.every((n) => typeof n === 'number'))
   )
 }
+
+/** Where usage and statistics of a model are kept: the provider's host and the model. */
+const modelKey = (baseUrl: string, model: string): string => `${hostOf(baseUrl)}|${model}`
+
+type Suggestion = { text: string; model: string }
+const NO_SUGGESTION: Suggestion = { text: '', model: '' }
 
 type Config = { enabled: boolean; provider: Provider }
 type Stats = {
@@ -193,7 +204,7 @@ const activate: Activate = (orca) => {
 
   // ponytail: read-modify-write without a lock; two overlapping suggestions may drop one sample.
   async function recordUsage(baseUrl: string, model: string, ms: number): Promise<void> {
-    const key = `${hostOf(baseUrl)}|${model}`
+    const key = modelKey(baseUrl, model)
     const usage = await readUsage()
     const { [key]: previous = [], ...rest } = usage
     // Why: re-inserting puts this model last, so the oldest ones are the ones dropped.
@@ -203,6 +214,29 @@ const activate: Activate = (orca) => {
       delete next[old]
     }
     await orca.storage.set(USAGE_KEY, next)
+  }
+
+  // Statistics: events arrive close together and each one is a read-modify-write, so they go one at a time.
+  let statsQueue: Promise<void> = Promise.resolve()
+  function updateStats(change: (metrics: Metrics) => Metrics): void {
+    statsQueue = statsQueue
+      .then(async () => {
+        const stored = await orca.storage.get(STATS_KEY)
+        await orca.storage.set(STATS_KEY, change(isStats(stored) ? stored : emptyStats(Date.now())))
+      })
+      .catch(() => undefined)
+  }
+
+  // Which model a suggestion on screen came from, so what the editor reports about it lands on that model.
+  const suggestionModels = new Map<number, string>()
+  let lastSuggestionId = 0
+  function remember(model: string): number {
+    lastSuggestionId += 1
+    suggestionModels.set(lastSuggestionId, model)
+    if (suggestionModels.size > SUGGESTION_IDS_KEPT) {
+      suggestionModels.delete(suggestionModels.keys().next().value as number)
+    }
+    return lastSuggestionId
   }
 
   async function refreshStatus(): Promise<void> {
@@ -266,18 +300,19 @@ const activate: Activate = (orca) => {
   }
 
   /** One suggestion for the text around a cursor; '' when there is none. */
-  async function suggest(event: CompletionContext): Promise<string> {
+  async function suggest(event: CompletionContext): Promise<Suggestion> {
     const config = await readConfig(orca)
     if (!config?.enabled || keyMissing(config)) {
-      return ''
+      return NO_SUGGESTION
     }
+    const model = modelKey(config.provider.baseUrl, config.provider.model)
     // Why the provider is in the key: after switching model, the old model's answers must not come back.
     const key = `${config.provider.baseUrl}|${config.provider.model}\n${event.path}\n${event.prefix.slice(-300)}\n${event.suffix.slice(0, 100)}`
     const cached = cache.get(key)
     if (cached !== undefined) {
       cache.delete(key)
       cache.set(key, cached)
-      return cached
+      return { text: cached, model }
     }
     // Why: only the newest keystroke's answer is ever shown, so stop the older request.
     inflight?.abort()
@@ -293,23 +328,28 @@ const activate: Activate = (orca) => {
       void recordUsage(config.provider.baseUrl, config.provider.model, stats.lastMs).catch(() => undefined)
       if (!suggestion) {
         void refreshStatus()
-        return ''
+        return NO_SUGGESTION
       }
       stats.suggested += 1
+      updateStats((metrics) => withLatency(metrics, model, stats.lastMs ?? 0))
       void refreshStatus()
       cache.set(key, suggestion)
       if (cache.size > CACHE_SIZE) {
         cache.delete(cache.keys().next().value as string)
       }
-      return suggestion
+      return { text: suggestion, model }
     } catch (error) {
       if (error instanceof Error && error.name === 'TimeoutError') {
         // Why: slowness is expected with some providers and is shown on the status item, not logged.
         stats.lastSlow = true
         // Why: a timeout is a real data point; leaving it out would make a slow model look fast.
         void recordUsage(config.provider.baseUrl, config.provider.model, REQUEST_TIMEOUT_MS).catch(() => undefined)
+        updateStats((metrics) => withLatency(metrics, model, REQUEST_TIMEOUT_MS))
         void refreshStatus()
-      } else if (!controller.signal.aborted) {
+      } else if (controller.signal.aborted) {
+        // A newer keystroke asked again, so this answer was never going to be shown.
+        updateStats((metrics) => bump(metrics, model, 'stale'))
+      } else {
         logFailure(error instanceof Error ? error.message : String(error))
         const host = new URL(config.provider.baseUrl).host
         stats.lastError = explainFailure(error, await translate(), host, REQUEST_TIMEOUT_MS).slice(
@@ -319,7 +359,7 @@ const activate: Activate = (orca) => {
         stats.lastSlow = false
         void refreshStatus()
       }
-      return ''
+      return NO_SUGGESTION
     } finally {
       if (inflight === controller) {
         inflight = null
@@ -383,7 +423,34 @@ const activate: Activate = (orca) => {
   void watcher.start()
   orca.panels.handle('editor.settings', async () => ({ settings: await watcher.start(), source: watcher.source() }))
 
-  orca.panels.handle('completion.ask', async (context) => ({ suggestion: await suggest(context) }))
+  orca.panels.handle('completion.ask', async (context) => {
+    const { text, model } = await suggest(context)
+    return { suggestion: text, id: text ? remember(model) : 0 }
+  })
+
+  orca.panels.handle('metrics.event', async ({ id, kind }) => {
+    const model = suggestionModels.get(id)
+    // Why check: the message comes from a page, so an unknown id or kind is ignored rather than trusted.
+    if (model && EVENT_KINDS.includes(kind)) {
+      updateStats((metrics) => bump(metrics, model, kind))
+    }
+    return {}
+  })
+
+  orca.panels.handle('stats.get', async () => {
+    const config = await readConfig(orca)
+    const model = config ? modelKey(config.provider.baseUrl, config.provider.model) : ''
+    await statsQueue
+    const stored = await orca.storage.get(STATS_KEY)
+    const metrics = isStats(stored) ? stored : emptyStats(Date.now())
+    return { model, since: metrics.since, summary: summarize(metrics, model) }
+  })
+
+  orca.panels.handle('stats.reset', async () => {
+    statsQueue = statsQueue.then(() => orca.storage.delete(STATS_KEY)).catch(() => undefined)
+    await statsQueue
+    return {}
+  })
 
   orca.panels.handle('status.get', snapshot)
 
@@ -498,7 +565,12 @@ const activate: Activate = (orca) => {
   }
 
   orca.settings.onDidChange(() => void refreshStatus())
-  orca.storage.onDidChange(() => void refreshStatus())
+  // Why the filter: usage and statistics are written on every suggestion, and none of it changes the status.
+  orca.storage.onDidChange(({ key }) => {
+    if (key !== USAGE_KEY && key !== STATS_KEY) {
+      void refreshStatus()
+    }
+  })
   void pinExistingKey().then(() => refreshStatus())
 }
 

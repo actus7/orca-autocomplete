@@ -63,9 +63,13 @@ The lightning icon at the bottom of Orca shows the state at a glance. Click it t
 
 The command palette also has **Autocomplete: Turn on or off** and **Autocomplete: Test connection**.
 
+## Statistics
+
+The panel has a **Statistics** block for the model you use: how many suggestions were shown, how many you accepted (whole, or a word or line at a time), how many were still there after 30 seconds, how many were removed or changed soon after, how many arrived too late to show, and how long answers take (the median, and the time within which 95% answered). A model that is accepted often *and* kept is a good fit; one that is accepted and then deleted is not. The numbers live on your computer only and **Clear statistics** starts them again.
+
 ## Privacy
 
-When you pause typing, the text around your cursor (up to about 6,000 characters before it and 2,000 after, plus the file name and language) is sent to the provider **you** chose, and nowhere else. Your API key is stored encrypted by Orca and is tied to the provider it was saved for: if you switch providers, the panel asks for a new key, and the old one is never sent to the new one. Language servers run on your computer and nothing from them is sent anywhere. The plugin has no telemetry and no analytics. Turn it off any time from the panel or the status bar.
+When you pause typing, the text around your cursor (up to about 6,000 characters before it and 2,000 after, plus the file name and language) is sent to the provider **you** chose, and nowhere else. Your API key is stored encrypted by Orca and is tied to the provider it was saved for: if you switch providers, the panel asks for a new key, and the old one is never sent to the new one. Language servers run on your computer and nothing from them is sent anywhere. The statistics are counted and kept on your computer only. The plugin has no telemetry and no analytics. Turn it off any time from the panel or the status bar.
 
 ## Troubleshooting
 
@@ -88,7 +92,7 @@ O painel, a barra de status e os avisos aparecem em português quando o Orca est
 3. Escolha o provedor, cole a chave de API, depois digite o nome de um modelo ou escolha na lista do seu provedor. Toque em **Salvar e testar**. O Ollama não precisa de chave.
 4. Digite em qualquer arquivo e faça uma pausa. A sugestão aparece em cinza; **Tab** aceita e **Esc** descarta.
 
-**Privacidade:** o texto ao redor do cursor vai apenas para o provedor que você escolheu. A chave fica guardada criptografada pelo Orca. Não há rastreamento.
+**Privacidade:** o texto ao redor do cursor vai apenas para o provedor que você escolheu. A chave fica guardada criptografada pelo Orca. As estatísticas do painel ficam só no seu computador. Não há rastreamento.
 
 ## For developers
 
@@ -97,6 +101,7 @@ npm install
 npm test            # worker, language server bridge, editor logic (Node 22.18+)
 npm run typecheck   # types for the worker, the panel and the editor
 npm run build       # bundles Monaco and the editor into editor/dist (commit the result)
+npm run bench -- --base-url http://localhost:11434/v1 --model qwen2.5-coder:1.5b --yes   # see bench/run.mjs
 ```
 
 Orca installs a plugin as plain files, so `editor/dist` is committed; its source is `editor/src`. `editor/languages.mjs` is the one table that drives the pages, the loaders and the `customEditors` of the manifest, and a test keeps them in line with Orca's limits (16 editors, 32 extensions each).
@@ -108,5 +113,7 @@ The plugin asks Orca for: its own settings, secrets and storage; and `workspace:
 To match Orca's editor, the worker opens Orca's profile database **read-only** and reads two documents from it: the editor `settings` and the `ui` state that holds the editor zoom. Nothing else in that database is read, nothing is written, and nothing is sent anywhere. Orca has no API for this yet; if one appears, the plugin will use it.
 
 The listing images are rendered from `assets/templates` with `assets/build.mjs` (needs Playwright; see the header of that file).
+
+`bench/` measures a provider and model on this repository's own code (cuts a line, asks for the rest, compares with what was there), so a change can be judged by numbers. It sends pieces of the files to the provider you name; a remote one needs `--yes`.
 
 MIT licensed.
