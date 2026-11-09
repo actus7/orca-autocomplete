@@ -17,15 +17,20 @@ export type Preset = {
   /** A starting point, shown as the model when the provider is picked. */
   model: string
   keyKind: 'required' | 'optional' | 'none'
+  /**
+   * Whether timing models is worth offering: not for providers with an obvious small-model choice,
+   * everything for a short local list, a handful of search results for long aggregator lists.
+   */
+  bench: 'off' | 'all' | 'some'
 }
 
 export const PRESETS: readonly Preset[] = [
-  { id: 'openai', format: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', keyKind: 'required' },
-  { id: 'anthropic', format: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-haiku-5-5', keyKind: 'required' },
-  { id: 'openrouter', format: 'openai', baseUrl: 'https://openrouter.ai/api/v1', model: 'mistralai/codestral-2508', keyKind: 'required' },
-  { id: 'ollama', format: 'openai', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5-coder:1.5b', keyKind: 'none' },
-  { id: 'custom-openai', format: 'openai', baseUrl: null, model: '', keyKind: 'optional' },
-  { id: 'custom-anthropic', format: 'anthropic', baseUrl: null, model: '', keyKind: 'optional' }
+  { id: 'openai', format: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', keyKind: 'required', bench: 'off' },
+  { id: 'anthropic', format: 'anthropic', baseUrl: 'https://api.anthropic.com', model: 'claude-haiku-5-5', keyKind: 'required', bench: 'off' },
+  { id: 'openrouter', format: 'openai', baseUrl: 'https://openrouter.ai/api/v1', model: 'mistralai/codestral-2508', keyKind: 'required', bench: 'some' },
+  { id: 'ollama', format: 'openai', baseUrl: 'http://localhost:11434/v1', model: 'qwen2.5-coder:1.5b', keyKind: 'none', bench: 'all' },
+  { id: 'custom-openai', format: 'openai', baseUrl: null, model: '', keyKind: 'optional', bench: 'some' },
+  { id: 'custom-anthropic', format: 'anthropic', baseUrl: null, model: '', keyKind: 'optional', bench: 'some' }
 ]
 
 function sameUrl(a: string, b: string): boolean {

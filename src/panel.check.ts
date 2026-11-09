@@ -14,6 +14,12 @@ const modelList = {
   models: ['gpt-4.1-mini', 'gpt-4o', 'gpt-4o-mini', 'gpt-5-mini', 'o4-mini']
 }
 
+const longList = {
+  ok: true,
+  message: '',
+  models: Array.from({ length: 40 }, (_, i) => `provider/model-${String(i + 1).padStart(2, '0')}`).concat(['provider/fast-mini'])
+}
+
 function snapshot(fields: Record<string, unknown>) {
   return {
     state: 'on',
@@ -59,6 +65,21 @@ export default defineCheck({
         message: '',
         models: ['codellama:7b', 'deepseek-coder:1.3b', 'qwen2.5-coder:1.5b', 'qwen2.5-coder:3b', 'starcoder2:3b']
       }
+    }
+  },
+  'short-list-with-use': {
+    settings: openai,
+    requests: {
+      'status.get': snapshot({ lastMs: 612, suggested: 14 }),
+      'models.list': modelList,
+      'models.usage': { usage: { 'gpt-4o-mini': { ms: 612, uses: 14 }, 'gpt-4.1-mini': { ms: 540, uses: 5 } } }
+    }
+  },
+  'long-list': {
+    settings: { ...openai, format: 'openai', baseUrl: 'https://openrouter.ai/api/v1', model: 'provider/fast-mini' },
+    requests: {
+      'status.get': snapshot({ host: 'openrouter.ai', model: 'provider/fast-mini' }),
+      'models.list': longList
     }
   },
   off: {

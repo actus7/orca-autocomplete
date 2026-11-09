@@ -65,18 +65,24 @@ export function filterModels(all: readonly string[], typed: string): string[] {
   return !query || exact ? [...all] : all.filter((id) => id.toLowerCase().includes(query))
 }
 
-/** One model's speed test: `ms` is how long a real completion took, null when it failed. */
-export type Speed = { ok: boolean; ms: number | null }
+/**
+ * How a model performed: `ms` is how long a real completion took, null when it failed. `uses` is set
+ * when it is the median of real suggestions instead of one test, and says how many it is based on.
+ */
+export type Speed = { ok: boolean; ms: number | null; uses?: number }
 export type Speeds = Readonly<Record<string, Speed>>
 
 // Why: each test is a real request to the provider; a cap keeps a free plan from being burnt on 400 models.
 export const BENCH_MAX_MODELS = 12
 export const BENCH_BATCH_SIZE = 4
 export const RECOMMENDED_COUNT = 3
+// Up to this many models the list is just a picker: no search box, no separate "type the name" tab.
+export const SHORT_LIST_MAX = 15
 
 /** Answered, and fast enough that Orca would keep the suggestion. */
 export function isFast(speed: Speed | undefined, limitMs: number): boolean {
-  return Boolean(speed?.ok && speed.ms !== null && speed.ms <= limitMs)
+  // Why: strictly under the limit, because a timeout is recorded as exactly the limit.
+  return Boolean(speed?.ok && speed.ms !== null && speed.ms < limitMs)
 }
 
 function tier(speed: Speed | undefined, limitMs: number): number {
@@ -89,6 +95,15 @@ function tier(speed: Speed | undefined, limitMs: number): number {
   return speed ? 2 : 3
 }
 
+// Why: names say a lot about speed; trying the likely-fast models first finds a good one in one round.
+const LIKELY_FAST = /haiku|mini|flash|lite|nano|small|instant|turbo|codestral|devstral|coder|\b([1-9]|1[0-4])b\b/i
+const LIKELY_SLOW = /opus|\bpro\b|thinking|reason|large|ultra|high|max|\b(70|120|405)b\b|\b(r1|o1|o3)\b/i
+
+/** The name suggests a small, fast model, so it is worth trying before the rest. */
+export function isLikelyFast(id: string): boolean {
+  return LIKELY_FAST.test(id) && !LIKELY_SLOW.test(id)
+}
+
 /** Fastest first, then slow answers, then failures (so no result is hidden), then untested models. */
 export function rankModels(models: readonly string[], speeds: Speeds, limitMs: number): string[] {
   const order = new Map(models.map((id, index) => [id, index]))
@@ -99,7 +114,12 @@ export function rankModels(models: readonly string[], speeds: Speeds, limitMs: n
       return byTier
     }
     const byMs = (sa?.ms ?? 0) - (sb?.ms ?? 0)
-    return byMs !== 0 ? byMs : (order.get(a) ?? 0) - (order.get(b) ?? 0)
+    if (byMs !== 0) {
+      return byMs
+    }
+    // Why: among models nobody has timed, the ones whose names suggest speed come first.
+    const byName = !sa && !sb ? Number(!isLikelyFast(a)) - Number(!isLikelyFast(b)) : 0
+    return byName !== 0 ? byName : (order.get(a) ?? 0) - (order.get(b) ?? 0)
   })
 }
 
@@ -111,7 +131,8 @@ export function modelLabel(id: string, speed: Speed | undefined, recommended: bo
   if (!speed.ok || speed.ms === null) {
     return `${id} · ✕`
   }
-  return `${recommended ? '★ ' : ''}${id} · ${(speed.ms / 1000).toFixed(1)}s`
+  const measured = speed.uses ? ` (${speed.uses}×)` : ''
+  return `${recommended ? '★ ' : ''}${id} · ${(speed.ms / 1000).toFixed(1)}s${measured}`
 }
 
 /** The fastest models that answered in time: the ones to suggest. */
@@ -120,10 +141,6 @@ export function recommendedModels(models: readonly string[], speeds: Speeds, lim
     .filter((id) => isFast(speeds[id], limitMs))
     .slice(0, RECOMMENDED_COUNT)
 }
-
-// Why: names say a lot about speed; trying the likely-fast models first finds a good one in one round.
-const LIKELY_FAST = /haiku|mini|flash|lite|nano|small|instant|turbo|codestral|devstral|coder|\b([1-9]|1[0-4])b\b/i
-const LIKELY_SLOW = /opus|\bpro\b|thinking|reason|large|ultra|high|max|\b(70|120|405)b\b|\b(r1|o1|o3)\b/i
 
 /**
  * The models to time next: untested ones, at most `limit`. The model in use goes first, so there is
@@ -139,11 +156,23 @@ export function pickCandidates(
     if (id === current) {
       return -1
     }
-    return LIKELY_FAST.test(id) && !LIKELY_SLOW.test(id) ? 0 : 1
+    return isLikelyFast(id) ? 0 : 1
   }
   // Array.prototype.sort is stable, so each group keeps the provider's order.
   return models
     .filter((id) => !speeds[id])
     .sort((a, b) => score(a) - score(b))
     .slice(0, limit)
+}
+
+/** What the test prompt (`return ` then a gap) should complete to; anything else is not a usable answer. */
+export function isExpectedAnswer(suggestion: string): boolean {
+  return /a\s*\+\s*b/.test(suggestion)
+}
+
+/** Median of the latest samples: one slow request does not move it. */
+export function median(samples: readonly number[]): number {
+  const sorted = [...samples].sort((x, y) => x - y)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[mid] : Math.round((sorted[mid - 1] + sorted[mid]) / 2)
 }

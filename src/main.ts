@@ -2,7 +2,7 @@ import type { Activate, OrcaWorkerApi } from 'orca/worker'
 import { complete, type Provider, type ProviderFormat } from './complete.ts'
 import { explainFailure } from './explain.ts'
 import { pickLocale, translator, type Translate } from './i18n.ts'
-import { BENCH_BATCH_SIZE, listModels } from './models.ts'
+import { BENCH_BATCH_SIZE, isExpectedAnswer, listModels, median } from './models.ts'
 import { presetFor } from './presets.ts'
 
 const SECRET_KEY = 'apiKey'
@@ -27,6 +27,20 @@ const TEST_EVENT = {
 }
 const ERROR_TEXT_CHARS = 120
 const LOG_REPEAT_MS = 60_000
+// Real suggestion latencies per provider and model: enough samples for a median, few enough to stay small.
+const USAGE_KEY = 'usage'
+const USAGE_SAMPLES = 9
+const USAGE_MODELS = 40
+
+type Usage = Record<string, number[]>
+
+function isUsage(value: unknown): value is Usage {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Object.values(value).every((v) => Array.isArray(v) && v.every((n) => typeof n === 'number'))
+  )
+}
 
 type Config = { enabled: boolean; provider: Provider }
 type Stats = {
@@ -164,6 +178,25 @@ const activate: Activate = (orca) => {
     }
   }
 
+  async function readUsage(): Promise<Usage> {
+    const stored = await orca.storage.get(USAGE_KEY)
+    return isUsage(stored) ? stored : {}
+  }
+
+  // ponytail: read-modify-write without a lock; two overlapping suggestions may drop one sample.
+  async function recordUsage(baseUrl: string, model: string, ms: number): Promise<void> {
+    const key = `${hostOf(baseUrl)}|${model}`
+    const usage = await readUsage()
+    const { [key]: previous = [], ...rest } = usage
+    // Why: re-inserting puts this model last, so the oldest ones are the ones dropped.
+    const next = { ...rest, [key]: [...previous, ms].slice(-USAGE_SAMPLES) }
+    const keys = Object.keys(next)
+    for (const old of keys.slice(0, Math.max(0, keys.length - USAGE_MODELS))) {
+      delete next[old]
+    }
+    await orca.storage.set(USAGE_KEY, next)
+  }
+
   async function refreshStatus(): Promise<void> {
     const [config, t] = [await readConfig(orca), await translate()]
     const state = stateOf(config, stats)
@@ -256,6 +289,7 @@ const activate: Activate = (orca) => {
       stats.lastMs = Date.now() - startedAt
       stats.lastError = null
       stats.lastSlow = false
+      void recordUsage(config.provider.baseUrl, config.provider.model, stats.lastMs).catch(() => undefined)
       if (!suggestion) {
         void refreshStatus()
         return
@@ -272,6 +306,8 @@ const activate: Activate = (orca) => {
         // Why: slowness is expected with some providers and is shown on the status item, not logged.
         stats.slow += 1
         stats.lastSlow = true
+        // Why: a timeout is a real data point; leaving it out would make a slow model look fast.
+        void recordUsage(config.provider.baseUrl, config.provider.model, REQUEST_TIMEOUT_MS).catch(() => undefined)
         void refreshStatus()
       } else if (!controller.signal.aborted) {
         logFailure(error instanceof Error ? error.message : String(error))
@@ -340,6 +376,17 @@ const activate: Activate = (orca) => {
     }
   })
 
+  orca.panels.handle('models.usage', async ({ baseUrl }) => {
+    const prefix = `${hostOf(baseUrl)}|`
+    const usage: Record<string, { ms: number; uses: number }> = {}
+    for (const [key, samples] of Object.entries(await readUsage())) {
+      if (key.startsWith(prefix) && samples.length > 0) {
+        usage[key.slice(prefix.length)] = { ms: median(samples), uses: samples.length }
+      }
+    }
+    return { usage }
+  })
+
   orca.panels.handle('models.bench', async ({ format, baseUrl, key, models }) => {
     const t = await translate()
     const url = baseUrl.trim()
@@ -357,8 +404,8 @@ const activate: Activate = (orca) => {
         const startedAt = Date.now()
         try {
           const suggestion = await complete(provider, TEST_EVENT, AbortSignal.timeout(BENCH_TIMEOUT_MS))
-          // Why: a model that answers nothing, or too slowly to matter, is no use for completing code.
-          return { model, ok: suggestion.trim() !== '', ms: Date.now() - startedAt }
+          // Why: the test has a known answer; a model that replies with prose or nothing is no use for code.
+          return { model, ok: isExpectedAnswer(suggestion), ms: Date.now() - startedAt }
         } catch {
           return { model, ok: false, ms: null }
         }

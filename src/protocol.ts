@@ -31,6 +31,12 @@ declare module 'orca' {
       input: { format: 'openai' | 'anthropic'; baseUrl: string; key: string; models: string[] }
       output: { results: { model: string; ok: boolean; ms: number | null }[]; message: string }
     }
+    /** Median latency of the real suggestions each model gave, newest samples only. */
+    'models.usage': {
+      /** Only what was measured against this address is returned. */
+      input: { baseUrl: string }
+      output: { usage: Record<string, { ms: number; uses: number }> }
+    }
     /** One real completion against the configured provider. */
     'provider.test': {
       input: Record<string, never>

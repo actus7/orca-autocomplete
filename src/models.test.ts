@@ -5,8 +5,11 @@ import {
   buildModelsRequest,
   extractModelIds,
   filterModels,
+  isExpectedAnswer,
   isFast,
+  isLikelyFast,
   listModels,
+  median,
   modelLabel,
   pickCandidates,
   rankModels,
@@ -80,6 +83,8 @@ test('isFast needs an answer inside the limit', () => {
   assert.equal(isFast(timed.slow, LIMIT), false)
   assert.equal(isFast(timed.broken, LIMIT), false)
   assert.equal(isFast(undefined, LIMIT), false)
+  // A timeout is recorded as the limit itself and must not count as fast.
+  assert.equal(isFast({ ok: true, ms: LIMIT }, LIMIT), false)
 })
 
 test('recommendedModels are the fastest three that answered in time', () => {
@@ -109,4 +114,27 @@ test('pickCandidates treats small parameter counts as likely fast and large ones
 test('pickCandidates always includes the model in use, so there is something to compare against', () => {
   const picked = pickCandidates(['a/flash', 'b/mini', 'c/my-current-big-model'], {}, 2, 'c/my-current-big-model')
   assert.deepEqual(picked, ['c/my-current-big-model', 'a/flash'])
+})
+
+test('isExpectedAnswer accepts the known completion however it is spaced, and rejects prose', () => {
+  assert.equal(isExpectedAnswer('a + b;'), true)
+  assert.equal(isExpectedAnswer('a+b'), true)
+  assert.equal(isExpectedAnswer('Sure! Here is the code'), false)
+  assert.equal(isExpectedAnswer(''), false)
+})
+
+test('median ignores one outlier and averages the middle pair of an even count', () => {
+  assert.equal(median([400, 450, 9000]), 450)
+  assert.equal(median([300, 500]), 400)
+  assert.equal(median([700]), 700)
+})
+
+test('modelLabel shows how many real uses a time is based on', () => {
+  assert.equal(modelLabel('m', { ok: true, ms: 600, uses: 14 }, false), 'm · 0.6s (14×)')
+})
+
+test('rankModels lists untested likely-fast names before the rest, in the provider order', () => {
+  const ranked = rankModels(['big-model', 'x-haiku', 'opus-max', 'y-mini'], {}, LIMIT)
+  assert.deepEqual(ranked, ['x-haiku', 'y-mini', 'big-model', 'opus-max'])
+  assert.equal(isLikelyFast('gemini-pro'), false)
 })

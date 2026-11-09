@@ -107,3 +107,25 @@ test('trimSuffixOverlap leaves legitimate same-line tails and unrelated text alo
   assert.equal(trimSuffixOverlap('a + b', ';\n'), 'a + b')
   assert.equal(trimSuffixOverlap('x', ''), 'x')
 })
+
+test('trimPrefixEcho drops what the model repeats from before the cursor', async () => {
+  const { trimPrefixEcho } = await import('./complete.ts')
+  assert.equal(trimPrefixEcho('const a = 1 + 2;', 'const a = '), '1 + 2;')
+  assert.equal(trimPrefixEcho('console.log(x)', 'foo()\nconsole.'), 'log(x)')
+  // Two repeated lines are cut as one, not just the last of them.
+  assert.equal(trimPrefixEcho('if (ok) {\n  run()', 'if (ok) {\n  '), 'run()')
+})
+
+test('trimPrefixEcho leaves a suggestion alone when it does not repeat the prefix or the tail is tiny', async () => {
+  const { trimPrefixEcho } = await import('./complete.ts')
+  assert.equal(trimPrefixEcho('1 + 2;', 'const a = '), '1 + 2;')
+  assert.equal(trimPrefixEcho('= 5', 'x'), '= 5')
+  assert.equal(trimPrefixEcho('', 'const a = '), '')
+})
+
+test('complete removes a repeated prefix from the provider answer', async () => {
+  const fetchImpl = (async () => new Response(JSON.stringify({ choices: [{ message: { content: 'const a = 42;' } }] }))) as FetchLike
+  const provider: Provider = { format: 'openai', baseUrl: 'http://x/v1', model: 'm', apiKey: '', maxTokens: 32 }
+  const out = await complete(provider, { path: 'a.ts', languageId: 'typescript', prefix: 'const a = ', suffix: '' }, AbortSignal.timeout(1000), fetchImpl)
+  assert.equal(out, '42;')
+})

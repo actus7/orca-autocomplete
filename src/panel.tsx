@@ -27,12 +27,14 @@ import {
 import { pickLocale, translator } from './i18n.ts'
 import {
   BENCH_BATCH_SIZE,
+  BENCH_MAX_MODELS,
   filterModels,
   MODEL_LIST_MAX_SHOWN,
   modelLabel,
   pickCandidates,
   rankModels,
   recommendedModels,
+  SHORT_LIST_MAX,
   type Speeds
 } from './models.ts'
 import { PRESETS, presetById, presetFor, type PresetId } from './presets.ts'
@@ -58,6 +60,8 @@ const modelsMessage = atom('')
 const modelMode = atom<'list' | 'type'>('list')
 const modelSearch = atom('')
 const speeds = atom<Speeds>({})
+const usage = atom<Speeds>({})
+const typeOpen = atom(false)
 const bench = atom<{ done: number; total: number } | null>(null)
 let modelsRun = 0
 let benchRun = 0
@@ -117,6 +121,16 @@ function forgetModels(): void {
   set(modelSearch, '')
   set(speeds, {})
   set(bench, null)
+  set(typeOpen, false)
+}
+
+/** What each model gave in real use against this address: a median, so one slow request is not it. */
+async function loadUsage(): Promise<void> {
+  const answer = await plugin.request('models.usage', { baseUrl: read(baseUrl) })
+  set(
+    usage,
+    Object.fromEntries(Object.entries(answer.usage).map(([id, u]) => [id, { ok: true, ms: u.ms, uses: u.uses }]))
+  )
 }
 
 /** Times the given models a few at a time, so results (and the order of the list) fill in as they arrive. */
@@ -157,12 +171,16 @@ export function setup(ctx: PanelContext): void {
     await loadSettings()
     const snapshot = await plugin.request('status.get', {})
     set(status, snapshot)
+    void loadUsage().catch(() => undefined)
     if (canLoadModels(snapshot.hasKey)) {
       await loadModels()
     }
   })().catch(() => undefined)
   ctx.subscriptions.push(
-    plugin.on('status.changed', (snapshot) => set(status, snapshot)),
+    plugin.on('status.changed', (snapshot) => {
+      set(status, snapshot)
+      void loadUsage().catch(() => undefined)
+    }),
     settings.onDidChange(() => void loadSettings().catch(() => undefined))
   )
 }
@@ -176,6 +194,7 @@ function choosePreset(id: string): void {
     set(baseUrl, preset.baseUrl)
     set(model, preset.model)
   }
+  void loadUsage().catch(() => undefined)
   if (preset.keyKind === 'none') {
     void loadModels()
   }
@@ -187,6 +206,7 @@ function editBaseUrl(value: string): void {
   set(presetId, presetFor(presetById(read(presetId)).format, value).id)
   set(outcome, null)
   forgetModels()
+  void loadUsage().catch(() => undefined)
 }
 
 async function saveAndTest(): Promise<void> {
@@ -304,12 +324,59 @@ function KeyField(props: { hasKey: boolean }) {
   )
 }
 
-/** One list of the provider's models: searchable, fastest first once tested, with a speed test. */
-function ModelList(props: { hasKey: boolean }) {
+/** The plain text field for a model name: always there when there is no list to pick from. */
+function ModelInput() {
+  const preset = presetById(read(presetId))
+  return (
+    <Stack gap="xs">
+      <Input
+        label={tr('model')}
+        placeholder={preset.model}
+        value={read(model)}
+        onChange={(value) => {
+          set(model, value)
+          set(outcome, null)
+        }}
+        onSubmit={() => void saveAndTest()}
+      />
+      <Text muted size="sm">{tr('model.typeHint')}</Text>
+    </Stack>
+  )
+}
+
+/** Why there is no list yet (loading, failed, no key) and the way to load it. */
+function ModelStatus(props: { hasKey: boolean }) {
+  const phase = read(modelsPhase)
+  const needsKey = presetById(read(presetId)).keyKind === 'required' && !props.hasKey && read(draftKey).trim() === ''
+  return (
+    <Stack gap="xs">
+      {phase === 'loading' ? <Spinner label={tr('models.loading')} /> : null}
+      {phase === 'failed' ? <Text tone="danger" size="sm">{tr('models.failed', { reason: read(modelsMessage) })}</Text> : null}
+      {phase === 'done' ? <Text muted size="sm">{tr('models.none')}</Text> : null}
+      {phase === 'idle' && needsKey ? <Text muted size="sm">{tr('models.needKey')}</Text> : null}
+      <Row>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon="refresh"
+          disabled={phase === 'loading' || !canLoadModels(props.hasKey)}
+          onPress={() => void loadModels()}
+        >
+          {tr('models.load')}
+        </Button>
+      </Row>
+    </Stack>
+  )
+}
+
+/** The provider's models, fastest first once timed, with the speed test where it is worth offering. */
+function ModelList(props: { hasKey: boolean; compact: boolean }) {
   const phase = read(modelsPhase)
   const all = read(models)
-  const timings = read(speeds)
+  // Why: real usage beats a single test, so it wins where both exist.
+  const timings: Speeds = { ...read(speeds), ...read(usage) }
   const running = read(bench)
+  const policy = presetById(read(presetId)).bench
   const limitMs = SLOW_SECONDS * 1000
   const matched = filterModels(all, read(modelSearch))
   const ranked = rankModels(matched, timings, limitMs)
@@ -318,14 +385,14 @@ function ModelList(props: { hasKey: boolean }) {
   const capped = ranked.slice(0, MODEL_LIST_MAX_SHOWN)
   // Why: the chosen model must stay in the list even when it ranks beyond the first page.
   const shown = chosen && !capped.includes(chosen) ? [chosen, ...capped.slice(0, -1)] : capped
-  const untested = pickCandidates(ranked, timings, undefined, chosen)
+  const untested = pickCandidates(ranked, timings, policy === 'all' ? ranked.length : BENCH_MAX_MODELS, chosen)
   const tested = matched.some((id) => timings[id])
-  const needsKey = presetById(read(presetId)).keyKind === 'required' && !props.hasKey && read(draftKey).trim() === ''
+  const usedReal = matched.some((id) => timings[id]?.uses)
   const fastest = best[0]
   return (
     <Stack gap="xs">
       {phase === 'loading' ? <Spinner label={tr('models.loading')} /> : null}
-      {phase !== 'loading' && all.length > 0 ? (
+      {!props.compact ? (
         <Input
           label={tr('models.search')}
           type="search"
@@ -334,7 +401,7 @@ function ModelList(props: { hasKey: boolean }) {
           onChange={(value) => set(modelSearch, value)}
         />
       ) : null}
-      {phase !== 'loading' && shown.length > 0 ? (
+      {shown.length > 0 ? (
         <Select
           label={tr('models.pick')}
           placeholder={tr('models.placeholder')}
@@ -364,24 +431,22 @@ function ModelList(props: { hasKey: boolean }) {
           {tr('models.useFastest', { model: fastest, seconds: seconds(timings[fastest]?.ms ?? 0) })}
         </Button>
       ) : null}
-      {!running && tested && best.length === 0 ? (
+      {!running && policy !== 'off' && tested && best.length === 0 ? (
         <Text tone="warning" size="sm">{tr('models.noneFast', { seconds: SLOW_SECONDS })}</Text>
       ) : null}
-      {phase === 'done' && all.length === 0 ? <Text muted size="sm">{tr('models.none')}</Text> : null}
-      {phase === 'done' && matched.length > shown.length ? (
+      {matched.length > shown.length ? (
         <Text muted size="sm">{tr('models.count', { shown: shown.length, total: matched.length })}</Text>
       ) : null}
-      {phase === 'done' && all.length > 0 && !running ? (
+      {policy !== 'off' && !running ? (
         <Text muted size="sm">
-          {untested.length === 0 && tested ? tr('models.allTested') : tr('models.benchHint')}
+          {untested.length === 0 && tested
+            ? tr(props.compact ? 'models.allTestedShort' : 'models.allTested')
+            : tr('models.benchHint')}
         </Text>
       ) : null}
-      {phase === 'failed' ? (
-        <Text tone="danger" size="sm">{tr('models.failed', { reason: read(modelsMessage) })}</Text>
-      ) : null}
-      {phase === 'idle' && needsKey ? <Text muted size="sm">{tr('models.needKey')}</Text> : null}
+      {usedReal ? <Text muted size="sm">{tr('models.usedHint')}</Text> : null}
       <Row>
-        {all.length > 0 ? (
+        {policy !== 'off' ? (
           <Button
             variant="outline"
             size="sm"
@@ -401,19 +466,47 @@ function ModelList(props: { hasKey: boolean }) {
         >
           {tr('models.load')}
         </Button>
-        {phase === 'failed' || (phase === 'done' && all.length === 0) ? (
-          <Button variant="ghost" size="sm" icon="edit" onPress={() => set(modelMode, 'type')}>
-            {tr('models.typeInstead')}
-          </Button>
-        ) : null}
       </Row>
     </Stack>
   )
 }
 
-/** Either choose the model from the provider's list or type its exact name; both set the same model. */
+/**
+ * Picking a model, in the simplest form the list allows: just a text field when there is no list,
+ * a plain picker for a short list, and a searchable list plus a typing tab for a long one.
+ */
 function ModelField(props: { hasKey: boolean }) {
-  const preset = presetById(read(presetId))
+  const phase = read(modelsPhase)
+  const all = read(models)
+  const typed = read(model).trim()
+  if (all.length === 0 || (phase !== 'done' && phase !== 'loading')) {
+    return (
+      <Stack gap="xs">
+        <ModelInput />
+        <ModelStatus hasKey={props.hasKey} />
+        <Text muted size="sm">{tr('model.hint', { seconds: SLOW_SECONDS })}</Text>
+      </Stack>
+    )
+  }
+  if (all.length <= SHORT_LIST_MAX) {
+    // Why: a model the list does not show (new, preview, custom) must still be reachable.
+    const typing = read(typeOpen) || (typed !== '' && !all.includes(typed))
+    return (
+      <Stack gap="xs">
+        <ModelList hasKey={props.hasKey} compact />
+        {typing ? (
+          <ModelInput />
+        ) : (
+          <Row>
+            <Button variant="ghost" size="sm" icon="edit" onPress={() => set(typeOpen, true)}>
+              {tr('models.typeInstead')}
+            </Button>
+          </Row>
+        )}
+        <Text muted size="sm">{tr('model.hint', { seconds: SLOW_SECONDS })}</Text>
+      </Stack>
+    )
+  }
   return (
     <Stack gap="xs">
       <Tabs
@@ -422,22 +515,10 @@ function ModelField(props: { hasKey: boolean }) {
         onChange={(value) => set(modelMode, value === 'type' ? 'type' : 'list')}
       >
         <Tab value="list" label={tr('mode.list')} icon="search">
-          <ModelList hasKey={props.hasKey} />
+          <ModelList hasKey={props.hasKey} compact={false} />
         </Tab>
         <Tab value="type" label={tr('mode.type')} icon="edit">
-          <Stack gap="xs">
-            <Input
-              label={tr('model')}
-              placeholder={preset.model}
-              value={read(model)}
-              onChange={(value) => {
-                set(model, value)
-                set(outcome, null)
-              }}
-              onSubmit={() => void saveAndTest()}
-            />
-            <Text muted size="sm">{tr('model.typeHint')}</Text>
-          </Stack>
+          <ModelInput />
         </Tab>
       </Tabs>
       <Text muted size="sm">{tr('model.hint', { seconds: SLOW_SECONDS })}</Text>

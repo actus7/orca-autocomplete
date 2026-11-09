@@ -417,15 +417,16 @@ function stubBenchFetch(byModel: Record<string, string | number>): {
 
 const benchAsk = { format: 'openai', baseUrl: 'https://api.openai.com/v1', key: '' }
 
-test('models.bench times each model and marks failures and empty answers as not ok', async () => {
-  const { restore } = stubBenchFetch({ good: '42', empty: '', down: 500 })
+test('models.bench times each model and marks failures, empty answers and prose as not ok', async () => {
+  const { restore } = stubBenchFetch({ good: 'a + b;', empty: '', prose: 'Sure! Here is the code', down: 500 })
   try {
     const worker = await mountWorker(keyedSettings, { apiKey: 'saved' })
-    const { results } = (await worker.request('models.bench', { ...benchAsk, models: ['good', 'empty', 'down'] })) as { results: BenchResult[] }
+    const { results } = (await worker.request('models.bench', { ...benchAsk, models: ['good', 'empty', 'prose', 'down'] })) as { results: BenchResult[] }
     const byModel = Object.fromEntries(results.map((r) => [r.model, r]))
     assert.equal(byModel.good.ok, true)
     assert.equal(typeof byModel.good.ms, 'number')
     assert.deepEqual([byModel.empty.ok, byModel.empty.ms === null], [false, false])
+    assert.deepEqual([byModel.prose.ok, byModel.prose.ms === null], [false, false])
     assert.deepEqual(byModel.down, { model: 'down', ok: false, ms: null })
   } finally {
     restore()
@@ -444,7 +445,7 @@ test('models.bench times at most four models per request, so a client cannot fan
 })
 
 test('models.bench never sends the saved key to another address, nor any key to a server that needs none', async () => {
-  const { seen, restore } = stubBenchFetch({ m: 'x' })
+  const { seen, restore } = stubBenchFetch({ m: 'a + b' })
   try {
     const worker = await mountWorker(keyedSettings, { apiKey: 'saved' })
     await worker.request('models.bench', { format: 'openai', baseUrl: 'https://openrouter.ai/api/v1', key: '', models: ['m'] })
@@ -463,4 +464,52 @@ test('models.bench refuses an address that is not http(s)', async () => {
   const answer = (await worker.request('models.bench', { format: 'openai', baseUrl: 'ftp://x', key: '', models: ['m'] })) as { results: BenchResult[]; message: string }
   assert.deepEqual(answer.results, [])
   assert.match(answer.message, /base URL/)
+})
+
+type Usage = { usage: Record<string, { ms: number; uses: number }> }
+const usageFor = (worker: Awaited<ReturnType<typeof mountWorker>>, baseUrl: string) =>
+  worker.request('models.usage', { baseUrl }) as Promise<Usage>
+
+test('real suggestions are timed per model, and models.usage answers with their median', async () => {
+  const restore = stubFetch(200, { choices: [{ message: { content: '42' } }] })
+  try {
+    const worker = await mountWorker()
+    for (const prefix of ['a ', 'b ', 'c ']) {
+      await worker.fire({ ...asked, prefix })
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const { usage } = await usageFor(worker, 'http://localhost:11434/v1')
+    assert.equal(usage.m.uses, 3)
+    assert.equal(typeof usage.m.ms, 'number')
+  } finally {
+    restore()
+  }
+})
+
+test('models.usage only reports what was measured against the asked address', async () => {
+  const restore = stubFetch(200, { choices: [{ message: { content: '42' } }] })
+  try {
+    const worker = await mountWorker()
+    await worker.fire(asked)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    assert.deepEqual((await usageFor(worker, 'https://api.openai.com/v1')).usage, {})
+    assert.equal(Object.keys((await usageFor(worker, 'http://localhost:11434/v1')).usage).length, 1)
+  } finally {
+    restore()
+  }
+})
+
+test('a timeout is recorded as a slow sample, so a slow model never looks fast', async () => {
+  const real = globalThis.fetch
+  globalThis.fetch = (async (_url: string, init: { signal: AbortSignal }) =>
+    new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason)))) as never
+  try {
+    const worker = await mountWorker()
+    await worker.fire(asked)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const { usage } = await usageFor(worker, 'http://localhost:11434/v1')
+    assert.equal(usage.m.ms, 1800)
+  } finally {
+    globalThis.fetch = real
+  }
 })

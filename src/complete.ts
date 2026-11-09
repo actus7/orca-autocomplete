@@ -112,6 +112,25 @@ export function cleanSuggestion(raw: string): string {
   return fenced ? fenced[1] : raw
 }
 
+const ECHO_MAX_LINES = 5
+const ECHO_MIN_CHARS = 3
+
+/**
+ * Chat models often start by repeating the code that is already before the cursor. Cuts that
+ * repeat: the longest tail of the prefix (up to a few whole lines, ending at the cursor) the
+ * suggestion begins with. A very short tail is left alone, since it may just be a coincidence.
+ */
+export function trimPrefixEcho(suggestion: string, prefix: string): string {
+  const lines = prefix.split('\n')
+  for (let count = Math.min(lines.length, ECHO_MAX_LINES); count >= 1; count -= 1) {
+    const tail = lines.slice(-count).join('\n')
+    if (tail.trim().length >= ECHO_MIN_CHARS && suggestion.startsWith(tail)) {
+      return suggestion.slice(tail.length)
+    }
+  }
+  return suggestion
+}
+
 const OVERLAP_PROBE_CHARS = 30
 const OVERLAP_MIN_PROBE_CHARS = 8
 
@@ -165,5 +184,6 @@ export async function complete(
     // Why status only: the body can echo the prompt, which holds the person's code.
     throw new ProviderHttpError(response.status)
   }
-  return trimSuffixOverlap(cleanSuggestion(extractText(provider.format, await response.json())), ctx.suffix)
+  const cleaned = cleanSuggestion(extractText(provider.format, await response.json()))
+  return trimSuffixOverlap(trimPrefixEcho(cleaned, ctx.prefix), ctx.suffix)
 }
