@@ -4,12 +4,12 @@
 import type * as Monaco from 'monaco-editor/esm/vs/editor/edcore.main'
 import { trackAcceptance, type TrackedModel } from './acceptance.ts'
 import { contextAround } from './edits.ts'
+import { Pacer } from './pacing.ts'
+import { remainder, type Offered } from './reuse.ts'
 
 // The same limits Orca's own editor uses for its hook, so both paths see the same amount of code.
 const PREFIX_MAX_CHARS = 32 * 1024
 const SUFFIX_MAX_CHARS = 8 * 1024
-// Why: a suggestion per keystroke would hammer the provider; wait until typing pauses.
-const PAUSE_MS = 300
 // Monaco runs this command right after the whole suggestion is inserted; it is the only "accepted" signal it gives.
 const ACCEPTED_COMMAND = 'orcaAutocomplete.accepted'
 // Ids of shown suggestions remembered so one suggestion is counted once, however often Monaco re-announces it.
@@ -55,9 +55,23 @@ export function registerInlineAi(
   filePath: () => string
 ): Monaco.IDisposable {
   const shown = new Set<number>()
+  const pacer = new Pacer()
+  // The suggestion on offer, so typing along it or accepting a word of it does not ask the provider again.
+  let offered: (Offered & { id: number }) | null = null
   const idOf = (item: Monaco.languages.InlineCompletion): number => Number(item.command?.arguments?.[0]) || 0
 
+  const changes = editor.onDidChangeModelContent((event) =>
+    pacer.noteChange(event.changes.length > 0 && event.changes.every((change) => change.text === ''), Date.now())
+  )
+
+  const itemFor = (id: number, text: string, position: Monaco.Position): Monaco.languages.InlineCompletion => ({
+    insertText: text,
+    range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
+    command: { id: ACCEPTED_COMMAND, title: '', arguments: [id, text] }
+  })
+
   const accepted = monaco.editor.registerCommand(ACCEPTED_COMMAND, (_accessor, id: number, text: string) => {
+    pacer.noteAccepted(Date.now())
     report(id, 'accepted')
     const model = editor.getModel()
     const cursor = editor.getPosition()
@@ -69,7 +83,16 @@ export function registerInlineAi(
   // Why '*': the language of the one open file can change (the generic editor detects it).
   const provider = monaco.languages.registerInlineCompletionsProvider('*', {
     async provideInlineCompletions(model, position, _context, token) {
-      if (!(await pause(PAUSE_MS, token))) {
+      const cursor = model.getOffsetAt(position)
+      if (offered) {
+        const typed = model.getValueInRange(monaco.Range.fromPositions(model.getPositionAt(offered.offset), position))
+        const rest = remainder(offered, cursor, typed)
+        if (rest) {
+          return { items: [itemFor(offered.id, rest, position)] }
+        }
+        offered = null
+      }
+      if (!(await pause(pacer.pause(Date.now()), token))) {
         return { items: [] }
       }
       const version = model.getVersionId()
@@ -94,15 +117,8 @@ export function registerInlineAi(
         }
         return { items: [] }
       }
-      return {
-        items: [
-          {
-            insertText: suggestion,
-            range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
-            command: { id: ACCEPTED_COMMAND, title: '', arguments: [id, suggestion] }
-          }
-        ]
-      }
+      offered = { offset: cursor, text: suggestion, id }
+      return { items: [itemFor(id, suggestion, position)] }
     },
     handleItemDidShow(_completions, item) {
       const id = idOf(item)
@@ -126,6 +142,7 @@ export function registerInlineAi(
     dispose() {
       provider.dispose()
       accepted.dispose()
+      changes.dispose()
     }
   }
 }
