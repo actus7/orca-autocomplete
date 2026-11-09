@@ -2,20 +2,27 @@
 <meta charset="utf-8">
 <link rel="stylesheet" href="base.css">
 <style>
-  body { width: 1920px; height: 1200px; display: grid; place-items: center; }
-  .editor { width: 1500px; }
-  .code { font-size: 34px; padding: 36px 0 44px; }
-  .tab { height: 72px; font-size: 24px; }
+  body { width: 1920px; height: 1200px; position: relative; overflow: hidden; }
+  .copy { position: absolute; left: 160px; top: 190px; width: 1600px; display: flex; flex-direction: column; gap: 26px; align-items: center; text-align: center; }
+  h2 { font-size: 78px; font-weight: 620; letter-spacing: -0.025em; line-height: 1.05; }
+  .lede { font-size: 36px; line-height: 1.35; color: var(--ink-2); max-width: 1100px; }
+  /* A real capture of the plugin's editor in Orca, shown at 1.5 times its pixels. */
+  .shot { position: absolute; left: 360px; top: 480px; width: 1200px; border-radius: 22px; overflow: hidden;
+    border: 1px solid var(--line); box-shadow: 0 28px 56px -16px rgba(27, 31, 35, 0.35), 0 2px 6px rgba(27, 31, 35, 0.08); }
+  .shot img { display: block; width: 1200px; }
+  .keys { position: absolute; left: 160px; width: 1600px; top: 730px; display: flex; justify-content: center; gap: 56px; font-size: 34px; color: var(--ink-2); align-items: center; }
+  .keys span { display: inline-flex; align-items: center; gap: 18px; }
+  .key { font-size: 28px; color: var(--ink-2); border: 2px solid #cfc9bd; border-bottom-width: 4px; border-radius: 12px; padding: 4px 20px; background: #fbfaf7; }
+  .foot { position: absolute; left: 160px; width: 1600px; text-align: center; bottom: 150px; font-size: 30px; color: var(--ink-2); }
 </style>
-<div class="editor">
-  <div class="tab"><b>users.ts</b></div>
-  <div class="code">
-    <div class="line"><span class="no">1</span><span><span class="cm">// Names of the users who are over 18.</span></span></div>
-    <div class="line"><span class="no">2</span><span><span class="kw">const</span> users = [{ name: <span class="str">'Ana'</span>, age: 31 }, { name: <span class="str">'Rui'</span>, age: 17 }]</span></div>
-    <div class="line"><span class="no">3</span><span></span></div>
-    <div class="line"><span class="no">4</span><span><span class="kw">export function</span> <span class="fn">adultNames</span>(list: <span class="ty">typeof</span> users): <span class="ty">string</span>[] {</span></div>
-    <div class="line"><span class="no">5</span><span>  <span class="kw">return</span> <span class="caret"></span><span class="ghost">list.filter((u) =&gt; u.age &gt;= 18).map((u) =&gt; u.name)</span><span class="key">Tab</span></span></div>
-    <div class="line"><span class="no">6</span><span>}</span></div>
-  </div>
+<div class="copy">
+  <h2>Gray suggestions, right at the cursor</h2>
+  <p class="lede">Pause while you type and the rest of the line appears in gray, in an editor that looks like Orca&rsquo;s own.</p>
 </div>
-<style>.str { color: #0a7d5a; }</style>
+<div class="shot"><img src="../captures/editor.png" alt=""></div>
+<div class="keys">
+  <span><b class="key">Tab</b> accepts it</span>
+  <span><b class="key">Esc</b> dismisses it</span>
+  <span><b class="key">Ctrl</b>+<b class="key">&rarr;</b> takes one word</span>
+</div>
+<p class="foot">OpenAI &middot; Anthropic &middot; OpenRouter &middot; Mistral / Codestral &middot; Ollama &middot; any compatible API</p>

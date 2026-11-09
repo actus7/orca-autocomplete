@@ -374,8 +374,13 @@
   "screenshots": [
     {
       "path": "assets/screenshot-editor.png",
-      "alt": "A TypeScript function where a gray suggestion follows the cursor, with a Tab key hint beside it",
+      "alt": "A Python function in the Autocomplete editor where the gray suggestion a + b follows the cursor after return",
       "caption": "A gray suggestion at the cursor. Tab accepts it."
+    },
+    {
+      "path": "assets/screenshot-panel.png",
+      "alt": "The Autocomplete panel in Orca: active, running on this computer, with the provider settings, statistics and help sections collapsed",
+      "caption": "The panel says where your code goes and what to fix."
     }
   ]
 }

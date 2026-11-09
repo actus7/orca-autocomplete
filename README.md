@@ -6,20 +6,27 @@ Gray suggestions as you type, from the AI provider you choose. Press **Tab** to 
 
 Works with **OpenAI**, **Anthropic**, **OpenRouter**, **Mistral / Codestral**, **Ollama** (free, on your computer) and any API that speaks the OpenAI or Anthropic format.
 
-> **Requires Orca 1.4.248 or newer.** The plugin brings its own editor (Monaco), so it does not depend on any change to Orca itself.
+## Install
 
-<p align="center"><img src="assets/screenshot-editor.png" alt="A gray suggestion at the cursor, with a Tab key hint" width="720"></p>
+```sh
+orca plugin install actus7/orca-autocomplete
+```
+
+Orca lists what the plugin asks for and prints a fingerprint. Accept it by running the same command again with `--approve <fingerprint>`. You can also install it from *Settings → Plugins*.
+
+> **Requires Orca 1.4.248 or newer** (tested on 1.4.255). The plugin brings its own editor (Monaco), so it does not depend on any change to Orca itself.
+
+<p align="center"><img src="assets/screenshot-editor.png" alt="A Python function in the Autocomplete editor where the gray suggestion a + b follows the cursor after return" width="820"></p>
 
 ## Quick start
 
 It takes about two minutes.
 
-1. **Install** the plugin from *Settings → Plugins*, or from a terminal: `orca plugin install actus7/orca-autocomplete`. Orca shows what the plugin asks for and a fingerprint; run the same command again with `--approve <fingerprint>` to accept it.
-2. **Open the Autocomplete panel**: the lightning icon in the right sidebar.
-3. **Choose your provider**, paste your API key, then type a model name or pick one from the list your provider offers. Press **Save and test**. Ollama needs no key.
-4. **Open a code file and pause while typing.** The suggestion appears in gray.
+1. **Open the Autocomplete panel**: the lightning icon in the right sidebar.
+2. **Choose your provider**, paste your API key, then pick a model from the list your provider offers or type its name. Press **Save and test**. Ollama needs no key.
+3. **Open a code file and pause while typing.** The suggestion appears in gray.
 
-Files in the languages below open in the plugin's editor by default. Files Orca always opens itself (`.ts`, `.md`, `.yaml`, `.env` and a few more) stay in Orca's editor; switch them with the view toggle in the file's tab.
+**Which files open in this editor.** Files in the languages listed below open in the plugin's editor by default. A few types are always opened by Orca's own editor first: `.ts`, `.md`, `.yaml`, `.json`, `.env` and some more. For those, switch with the view toggle at the top right of the file's tab. Orca does not remember that choice, so you switch again for the next file.
 
 ## The editor
 
@@ -29,11 +36,13 @@ A full code editor (Monaco, the engine behind VS Code) that follows Orca's theme
 - **Follows your Orca settings:** font and size (including the terminal-font fallback and the editor zoom), weight, line height, ligatures, line wrapping and the minimap are read from Orca's own settings, so the plugin's editor and Orca's, side by side, look the same, and a change you make in Orca (*Settings → General*, or the file menu's *Line wrap*) shows up in the plugin's editor within a couple of seconds. The minimap is off until you turn it on in Orca, then it is on in both. This needs a recent Orca on this computer; when Orca's settings cannot be read, or if you turn off *Match Orca's editor*, the four editor settings of this plugin apply instead.
 - **Languages with their own editor:** TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin, C#, C and C++, PHP, Ruby, Swift, Shell, SQL, HTML. A **Code** editor handles CSS, SCSS, Less, XML, YAML, Markdown, Dart, Lua, R, PowerShell, Batch, Scala, Elixir, Clojure, Perl, F#, Julia, Terraform, Protocol Buffers, GraphQL and Dockerfile, recognising the language from the file's content.
 - **Documents:** Markdown and text files (`.md`, `.txt`) get suggestions written as prose, in the language of the text around the cursor: the rest of the sentence, or one more short sentence, never a block of code.
-- **Built in, nothing to install:** errors, completion, hover, go to definition and rename for TypeScript and JavaScript, HTML and CSS.
-- **Language servers:** if a language server is installed on your computer (`rust-analyzer`, `gopls`, `pyright`, `clangd`, `typescript-language-server`, `kotlin-language-server`, `csharp-ls`, `intelephense`, `solargraph`, `sourcekit-lsp`, `bash-language-server`, `lua-language-server`, `yaml-language-server`, Dart's), the plugin starts it for files inside an Orca workspace and adds its errors, completion, hover, signature help, definitions, references, outline, formatting, rename and quick fixes. Turn it off in *Settings → Plugins → Autocomplete → Use language servers*. If the server cannot start, a red note in the editor's corner says why.
+- **Built in, nothing to install:** errors, completion, hover, go to definition and rename for TypeScript and JavaScript, HTML and CSS, within the open file.
+- **Language servers:** if a language server is installed on your computer (`rust-analyzer`, `gopls`, `pyright`, `clangd`, `typescript-language-server`, `kotlin-language-server`, `csharp-ls`, `intelephense`, `solargraph`, `sourcekit-lsp`, `bash-language-server`, `lua-language-server`, `yaml-language-server`, Dart's), the plugin starts it for files inside an Orca workspace and adds its errors, completion (picking a symbol from another file inserts its import), hover, signature help, definitions, references, outline, formatting, rename and quick fixes. Turn it off in *Settings → Plugins → Autocomplete → Use language servers*. If the server cannot start, a red note in the editor's corner says why.
 - **Limits:** a language server needs the file to be inside a local Orca workspace (remote hosts are not reached). Definitions and renames that touch other files are not followed yet. TypeScript needs the project's own `typescript` package in `node_modules`.
 
 If something is not right, the panel says what happened and what to do next.
+
+<p align="center"><img src="assets/screenshot-panel.png" alt="The Autocomplete panel in Orca: active, running on this computer, with the provider settings, statistics and help sections collapsed" width="820"></p>
 
 ## Choose a provider
 
@@ -73,30 +82,52 @@ The panel has a **Statistics** block for the model you use: how many suggestions
 
 ## Privacy
 
-When you pause typing, the text around your cursor (up to about 6,000 characters before it and 2,000 after, plus the file name and language) is sent to the provider **you** chose, and nowhere else. If that text holds something that looks like a key, a token, a private key or a password in a web address, **nothing is sent** and there is no suggestion at that spot. Your API key is stored encrypted by Orca and is tied to the provider it was saved for: if you switch providers, the panel asks for a new key, and the old one is never sent to the new one. Language servers run on your computer and nothing from them is sent anywhere. The panel always says where that text goes: nowhere (the AI is off or not set up), this computer (Ollama or another server on localhost), or the host of the provider you chose. A server elsewhere on your network counts as remote. The statistics are counted and kept on your computer only. The plugin has no telemetry and no analytics. Turn it off any time from the panel or the status bar.
+When you pause typing, the text around your cursor (up to about 6,000 characters before it and 2,000 after, plus the kind of file) is sent to the provider **you** chose, and nowhere else. If that text holds something that looks like a key, a token, a private key or a password in a web address, **nothing is sent** and there is no suggestion at that spot. Your API key is stored encrypted by Orca and is tied to the provider it was saved for: if you switch providers, the panel asks for a new key, and the old one is never sent to the new one. Language servers run on your computer and nothing from them is sent anywhere. The panel always says where that text goes: nowhere (the AI is off or not set up), this computer (Ollama or another server on localhost), or the host of the provider you chose. A server elsewhere on your network counts as remote. The statistics are counted and kept on your computer only. The plugin has no telemetry and no analytics. Turn it off any time from the panel or the status bar.
 
 ## Troubleshooting
 
 | What you see | What to do |
 | --- | --- |
 | Nothing appears | Pause for a moment after typing. Check that the status bar icon is green. Not every spot gets a suggestion. |
+| No suggestions in a `.ts`, `.md`, `.yaml` or `.json` file | Orca opened it in its own editor. Use the view toggle at the top right of the file's tab. |
+| No suggestion near a key, token or password | By design: nothing is sent while such text is around the cursor. |
 | "The provider rejected the key" | Paste the key again in the panel and press **Save and test**. Check that it belongs to the provider you picked. |
 | "Model or address not found" | Check the model name and, for the *Other* providers, the base URL. |
 | "Could not reach … Is the server running?" | For Ollama, start it. Otherwise check the address and your connection. |
+| "The server refused the request" (Ollama) | The model cannot fill in the middle of code. Pick a code model such as `qwen2.5-coder`, or use *Other (OpenAI-compatible)*. |
 | Yellow "slow" | Pick a smaller model, or one hosted closer to you. |
 | "Rate limit reached" | Wait a moment, or pick another model. |
+| Gray text that is not code (notes, odd tags) | Your gateway adds instructions of its own to every request. The plugin drops tool-call markup, but a route without injected prompts gives better suggestions. |
 
 ## Português (pt-BR)
 
 O painel, a barra de status e os avisos aparecem em português quando o Orca está em pt-BR.
 
-**Começo rápido**
-1. Instale o plugin em *Settings → Plugins*.
-2. Abra o painel **Autocomplete** (o raio na barra lateral direita).
-3. Escolha o provedor, cole a chave de API, depois digite o nome de um modelo ou escolha na lista do seu provedor. Toque em **Salvar e testar**. O Ollama não precisa de chave.
-4. Digite em qualquer arquivo e faça uma pausa. A sugestão aparece em cinza; **Tab** aceita e **Esc** descarta.
+**Instalação**
 
-**Privacidade:** o texto ao redor do cursor vai apenas para o provedor que você escolheu, e nada é enviado se ele parecer conter uma chave, um token ou uma senha. A chave fica guardada criptografada pelo Orca. As estatísticas do painel ficam só no seu computador. Não há rastreamento.
+```sh
+orca plugin install actus7/orca-autocomplete
+```
+
+O Orca mostra o que o plugin pede e um *fingerprint*. Para aceitar, rode o mesmo comando de novo com `--approve <fingerprint>`. Também dá para instalar em *Settings → Plugins*. Requer o Orca 1.4.248 ou mais novo.
+
+**Começo rápido**
+1. Abra o painel **Autocomplete** (o raio na barra lateral direita).
+2. Escolha o provedor, cole a chave de API, depois escolha um modelo na lista do seu provedor ou digite o nome. Toque em **Salvar e testar**. O Ollama não precisa de chave.
+3. Digite em um arquivo de código e faça uma pausa. A sugestão aparece em cinza; **Tab** aceita e **Esc** descarta.
+
+**Quais arquivos abrem neste editor.** Os arquivos das linguagens listadas acima abrem no editor do plugin por padrão. Alguns tipos são sempre abertos antes pelo editor do próprio Orca: `.ts`, `.md`, `.yaml`, `.json`, `.env` e alguns outros. Neles, troque pelo seletor de visualização no canto superior direito da aba do arquivo. O Orca não lembra a escolha, então a troca vale para um arquivo por vez.
+
+**Provedores.** OpenAI, Anthropic, OpenRouter, Mistral / Codestral, Ollama e qualquer API compatível com OpenAI ou Anthropic. O Ollama e a Mistral recebem o texto antes e o texto depois do cursor e preenchem o trecho do meio; os demais respondem como chat. Use um modelo pequeno e rápido: uma sugestão que passa de 1,8 s é descartada.
+
+**Estatísticas.** O painel mostra, para o modelo em uso, quantas sugestões foram mostradas, aceitas (inteiras ou por palavra), mantidas após 30 s, removidas depois, tardias, e o tempo de resposta. Tudo fica só no seu computador, e **Limpar estatísticas** zera.
+
+**Privacidade:** o texto ao redor do cursor vai apenas para o provedor que você escolheu, e nada é enviado se ele parecer conter uma chave, um token ou uma senha. O painel sempre diz para onde o texto vai: nenhum lugar (IA desligada ou não configurada), este computador (Ollama ou outro servidor no localhost) ou o host do provedor. A chave fica guardada criptografada pelo Orca e só vale para o provedor em que foi salva. Não há rastreamento.
+
+**Problemas comuns**
+- *Nada aparece em um arquivo `.ts`, `.md`, `.yaml` ou `.json`:* ele abriu no editor do Orca; use o seletor de visualização.
+- *"O servidor recusou o pedido" (Ollama):* o modelo não completa no meio do código; escolha um modelo de código, como o `qwen2.5-coder`, ou use *Outro (compatível com OpenAI)*.
+- *Texto cinza que não é código:* o seu roteador injeta instruções próprias em cada pedido. O plugin descarta marcação de chamada de ferramenta, mas uma rota sem prompts injetados dá sugestões melhores.
 
 ## For developers
 
@@ -117,8 +148,18 @@ The plugin asks Orca for: its own settings, secrets and storage; and `workspace:
 
 To match Orca's editor, the worker opens Orca's profile database **read-only** and reads two documents from it: the editor `settings` and the `ui` state that holds the editor zoom. Nothing else in that database is read, nothing is written, and nothing is sent anywhere. Orca has no API for this yet; if one appears, the plugin will use it.
 
-The listing images are rendered from `assets/templates` with `assets/build.mjs` (needs Playwright; see the header of that file).
+### Images
+
+`assets/build.mjs` draws the icon and the cover, and places the two real captures in `assets/captures` (the editor with a suggestion showing, and the panel) on the 1920x1200 screens of the listing (the catalog asks for at least 1280x800). It needs Playwright; see the header of that file.
+
+### Benchmark
 
 `bench/` measures a provider and model on this repository's own code (cuts a line inside code, asks for the rest, compares with what was there), so a change can be judged by numbers. It sends pieces of the files to the provider you name; a remote one needs `--yes`. `node bench/compare.mjs a.json b.json` compares two runs made with the same `--seed` and `--samples` place by place and says whether a difference is more than chance. `--context graph` adds an experiment: the declarations from other files that the code nearby uses, read from a [CodeGraph](https://github.com/colbymchenry/codegraph) index (`codegraph init` first; the `.codegraph/` folder is not committed).
+
+### Releasing
+
+1. Set the version in `orca-plugin.json`, then `npm run build`, `npm test`, `npm run test:browser` and `orca plugin validate .`.
+2. Commit, then tag the commit `vX.Y.Z` and push the tag. The tag is what the catalog lists, and a listed version is permanent, so tag only a commit you have tried in Orca.
+3. Give the repository the `orca-plugin` topic. The catalog finds public repositories by that topic and lists each version from its tag; there is no pull request to open.
 
 MIT licensed.

@@ -1,0 +1,26 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="base.css">
+<style>
+  body { width: 1920px; height: 1200px; position: relative; overflow: hidden; }
+  .copy { position: absolute; left: 160px; top: 0; bottom: 0; width: 760px; display: flex; flex-direction: column; justify-content: center; gap: 36px; }
+  h2 { font-size: 78px; font-weight: 620; letter-spacing: -0.025em; line-height: 1.05; }
+  .lede { font-size: 36px; line-height: 1.35; color: var(--ink-2); }
+  ul { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 22px; font-size: 32px; line-height: 1.35; color: var(--ink-2); }
+  li { display: flex; gap: 20px; }
+  li::before { content: ""; flex: none; width: 14px; height: 14px; margin-top: 16px; border-radius: 50%; background: var(--accent); }
+  /* A real capture of the plugin's panel in Orca, shown at 1.4 times its pixels. */
+  .shot { position: absolute; left: 1000px; top: 330px; width: 760px; border-radius: 22px; overflow: hidden;
+    border: 1px solid var(--line); box-shadow: 0 28px 56px -16px rgba(27, 31, 35, 0.35), 0 2px 6px rgba(27, 31, 35, 0.08); }
+  .shot img { display: block; width: 760px; }
+</style>
+<div class="copy">
+  <h2>Know where your code goes</h2>
+  <p class="lede">The panel says it plainly, and code that looks like a secret is not sent.</p>
+  <ul>
+    <li>Nothing is sent while the AI is off or not set up.</li>
+    <li>Ollama and other servers on this computer keep your code here.</li>
+    <li>Any other provider is named, host and all.</li>
+  </ul>
+</div>
+<div class="shot"><img src="../captures/panel.png" alt=""></div>
