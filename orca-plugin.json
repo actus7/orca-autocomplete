@@ -12,7 +12,11 @@
   },
   "main": "src/main.ts",
   "contributes": {
-    "hooks": [{ "event": "editor.inlineCompletion" }],
+    "hooks": [
+      {
+        "event": "editor.inlineCompletion"
+      }
+    ],
     "panels": [
       {
         "id": "setup",
@@ -35,14 +39,20 @@
         "title": "Provider format",
         "description": "API style the base URL speaks.",
         "type": "string",
-        "enum": ["openai", "anthropic"],
-        "enumLabels": ["OpenAI-compatible (/chat/completions)", "Anthropic-compatible (/v1/messages)"],
+        "enum": [
+          "openai",
+          "anthropic"
+        ],
+        "enumLabels": [
+          "OpenAI-compatible (/chat/completions)",
+          "Anthropic-compatible (/v1/messages)"
+        ],
         "default": "openai"
       },
       {
         "key": "baseUrl",
         "title": "Base URL",
-        "description": "OpenAI style: the root holding /chat/completions, usually ending in /v1. Anthropic style: the host, e.g. https://api.anthropic.com.",
+        "description": "OpenAI style: the root holding /chat/completions, usually ending in /v1. Anthropic style: the host, e.g. https://api.anthropic.com. The API key is set in the Autocomplete panel (right sidebar), not here.",
         "type": "string",
         "default": "https://api.openai.com/v1",
         "placeholder": "http://localhost:11434/v1"
@@ -63,7 +73,34 @@
         "minimum": 16,
         "maximum": 512
       }
+    ],
+    "commands": [
+      {
+        "id": "toggle",
+        "title": "Autocomplete: Turn on or off"
+      },
+      {
+        "id": "test",
+        "title": "Autocomplete: Test connection"
+      }
+    ],
+    "statusBarItems": [
+      {
+        "id": "status",
+        "icon": "zap",
+        "text": "setup",
+        "tone": "neutral",
+        "tooltip": "Autocomplete",
+        "command": "toggle"
+      }
     ]
   },
-  "capabilities": [{ "kind": "settings:own" }, { "kind": "secrets:own" }]
+  "capabilities": [
+    {
+      "kind": "settings:own"
+    },
+    {
+      "kind": "secrets:own"
+    }
+  ]
 }

@@ -40,6 +40,7 @@ function joinUrl(base: string, path: string): string {
   return `${base.replace(/\/+$/, '')}${path}`
 }
 
+// Why no temperature: current Claude and OpenAI reasoning models reject it with HTTP 400.
 export function buildRequest(
   provider: Provider,
   ctx: CompletionContext
@@ -59,7 +60,6 @@ export function buildRequest(
     const body = {
       model: provider.model,
       max_tokens: provider.maxTokens,
-      temperature: 0,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: user }]
     }
@@ -72,7 +72,6 @@ export function buildRequest(
   const body = {
     model: provider.model,
     max_tokens: provider.maxTokens,
-    temperature: 0,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: user }

@@ -2,12 +2,18 @@ import type { Activate, OrcaWorkerApi } from 'orca/worker'
 import { complete, type Provider, type ProviderFormat } from './complete.ts'
 
 const SECRET_KEY = 'apiKey'
+const STATUS_ITEM = 'status'
 // Why: Orca drops a hook still running after 2 s; stop the request just before that.
 const REQUEST_TIMEOUT_MS = 1800
 const CACHE_SIZE = 50
 const TEST_TIMEOUT_MS = 15_000
+const ERROR_TEXT_CHARS = 60
 
 type Config = { enabled: boolean; provider: Provider }
+type Stats = { suggested: number; errors: number; lastMs: number | null; lastError: string | null }
+type State = 'on' | 'off' | 'setup' | 'error'
+
+const TONES = { on: 'success', off: 'neutral', setup: 'warning', error: 'danger' } as const
 
 async function readConfig(orca: OrcaWorkerApi): Promise<Config | null> {
   const settings = await orca.settings.get()
@@ -29,10 +35,69 @@ async function readConfig(orca: OrcaWorkerApi): Promise<Config | null> {
   }
 }
 
+function statusOf(config: Config | null, stats: Stats): { state: State; tooltip: string } {
+  if (!config) {
+    return {
+      state: 'setup',
+      tooltip:
+        'Autocomplete needs setup: set the base URL and model in Settings, and the API key in the Autocomplete panel (right sidebar).'
+    }
+  }
+  if (!config.enabled) {
+    return { state: 'off', tooltip: 'Autocomplete is off. Click to turn it on.' }
+  }
+  const where = `${new URL(config.provider.baseUrl).host} · ${config.provider.model}`
+  if (stats.lastError) {
+    return {
+      state: 'error',
+      tooltip: `Autocomplete: last request failed (${stats.lastError}) · ${where} · click to turn off`
+    }
+  }
+  const last = stats.lastMs === null ? 'no request yet' : `last ${stats.lastMs} ms`
+  return {
+    state: 'on',
+    tooltip: `Autocomplete on · ${where} · ${last} · ${stats.suggested} suggested · ${stats.errors} errors · click to turn off`
+  }
+}
+
 const activate: Activate = (orca) => {
   // ponytail: insertion-ordered Map as LRU; swap for a real cache only if hit rate matters.
   const cache = new Map<string, string>()
+  const stats: Stats = { suggested: 0, errors: 0, lastMs: null, lastError: null }
   let inflight: AbortController | null = null
+
+  async function refreshStatus(): Promise<void> {
+    const { state, tooltip } = statusOf(await readConfig(orca), stats)
+    const text = state === 'on' && stats.lastMs !== null ? `${(stats.lastMs / 1000).toFixed(1)}s` : state
+    try {
+      await orca.host.call('statusBar.update', { id: STATUS_ITEM, tone: TONES[state], text, tooltip })
+    } catch (error) {
+      // Why: an Orca without status bar support must not break completion.
+      orca.log(`status bar update failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  async function runTest(): Promise<{ ok: boolean; message: string }> {
+    const config = await readConfig(orca)
+    if (!config) {
+      return { ok: false, message: 'Set a base URL (http or https) and a model in Settings first.' }
+    }
+    try {
+      const sample = await complete(
+        config.provider,
+        {
+          path: 'test.ts',
+          languageId: 'typescript',
+          prefix: 'function add(a: number, b: number) {\n  return ',
+          suffix: '\n}'
+        },
+        AbortSignal.timeout(TEST_TIMEOUT_MS)
+      )
+      return { ok: true, message: sample ? `Got: ${sample.slice(0, 80)}` : 'Connected, empty answer.' }
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) }
+    }
+  }
 
   orca.hooks.on('editor.inlineCompletion', async (event, next) => {
     const config = await readConfig(orca)
@@ -50,12 +115,18 @@ const activate: Activate = (orca) => {
     inflight?.abort()
     const controller = new AbortController()
     inflight = controller
+    const startedAt = Date.now()
     try {
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
       const suggestion = await complete(config.provider, event, signal)
+      stats.lastMs = Date.now() - startedAt
+      stats.lastError = null
       if (!suggestion) {
+        void refreshStatus()
         return
       }
+      stats.suggested += 1
+      void refreshStatus()
       cache.set(key, suggestion)
       if (cache.size > CACHE_SIZE) {
         cache.delete(cache.keys().next().value as string)
@@ -63,7 +134,11 @@ const activate: Activate = (orca) => {
       return next({ ...event, suggestion })
     } catch (error) {
       if (!controller.signal.aborted) {
-        orca.log(`completion failed: ${error instanceof Error ? error.message : String(error)}`)
+        const message = error instanceof Error ? error.message : String(error)
+        orca.log(`completion failed: ${message}`)
+        stats.errors += 1
+        stats.lastError = message.slice(0, ERROR_TEXT_CHARS)
+        void refreshStatus()
       }
       return
     } finally {
@@ -85,30 +160,30 @@ const activate: Activate = (orca) => {
       await orca.secrets.delete(SECRET_KEY)
     }
     cache.clear()
+    stats.lastError = null
+    void refreshStatus()
     return { hasKey: Boolean(trimmed) }
   })
 
-  orca.panels.handle('provider.test', async () => {
-    const config = await readConfig(orca)
-    if (!config) {
-      return { ok: false, message: 'Set a base URL (http or https) and a model in Settings first.' }
-    }
-    try {
-      const sample = await complete(
-        config.provider,
-        {
-          path: 'test.ts',
-          languageId: 'typescript',
-          prefix: 'function add(a: number, b: number) {\n  return ',
-          suffix: '\n}'
-        },
-        AbortSignal.timeout(TEST_TIMEOUT_MS)
-      )
-      return { ok: true, message: sample ? `Got: ${sample.slice(0, 80)}` : 'Connected, empty answer.' }
-    } catch (error) {
-      return { ok: false, message: error instanceof Error ? error.message : String(error) }
-    }
+  orca.panels.handle('provider.test', runTest)
+
+  orca.commands.register('toggle', async () => {
+    const enabled = (await orca.settings.get('enabled')) !== false
+    await orca.settings.set('enabled', !enabled)
+    stats.lastError = null
+    await refreshStatus()
+    return `Autocomplete ${enabled ? 'off' : 'on'}`
   })
+
+  orca.commands.register('test', async () => {
+    const { ok, message } = await runTest()
+    stats.lastError = ok ? null : message.slice(0, ERROR_TEXT_CHARS)
+    await refreshStatus()
+    return `Autocomplete test ${ok ? 'passed' : 'failed'}: ${message}`
+  })
+
+  orca.settings.onDidChange(() => void refreshStatus())
+  void refreshStatus()
 }
 
 export default activate

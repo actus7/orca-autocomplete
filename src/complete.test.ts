@@ -34,6 +34,11 @@ test('openai request targets /chat/completions with a bearer key and the cursor 
   assert.match(body.messages[1].content, /const x = <CURSOR>;/)
 })
 
+test('neither format sends temperature, which newer models reject', () => {
+  assert.equal('temperature' in JSON.parse(buildRequest(openai, ctx).init.body), false)
+  assert.equal('temperature' in JSON.parse(buildRequest(anthropic, ctx).init.body), false)
+})
+
 test('openai request omits authorization when no key is set', () => {
   const { init } = buildRequest({ ...openai, apiKey: '' }, ctx)
   assert.equal('authorization' in init.headers, false)

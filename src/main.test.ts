@@ -21,15 +21,30 @@ const baseSettings: Json = {
 }
 
 /** The few `orca` members main.ts uses; `next(e)` is modelled as `{ next: e }`. */
-async function mountWorker(settings: Json = baseSettings, secrets: Record<string, string> = {}) {
+async function mountWorker(initial: Json = baseSettings, secrets: Record<string, string> = {}) {
+  const settings = { ...initial }
   const hooks = new Map<string, (event: Json, next: (e: Json) => unknown) => unknown>()
   const handlers = new Map<string, (input: Json) => Promise<unknown>>()
+  const commands = new Map<string, () => Promise<unknown>>()
+  const statusUpdates: Json[] = []
   const logs: string[] = []
   const disposable = { dispose() {} }
   const orca = {
     hooks: { on: (name: string, fn: never) => (hooks.set(name, fn), disposable) },
     panels: { handle: (name: string, fn: never) => (handlers.set(name, fn), disposable) },
-    settings: { get: async () => settings },
+    commands: { register: (name: string, fn: never) => (commands.set(name, fn), disposable) },
+    host: {
+      call: async (method: string, params: Json) => {
+        if (method === 'statusBar.update') {
+          statusUpdates.push(params)
+        }
+      }
+    },
+    settings: {
+      get: async (key?: string) => (key === undefined ? settings : settings[key]),
+      set: async (key: string, value: unknown) => void (settings[key] = value),
+      onDidChange: () => disposable
+    },
     secrets: {
       get: async (key: string) => secrets[key] ?? null,
       set: async (key: string, value: string) => void (secrets[key] = value),
@@ -41,11 +56,20 @@ async function mountWorker(settings: Json = baseSettings, secrets: Record<string
   return {
     logs,
     secrets,
+    settings,
+    statusUpdates,
+    lastStatus: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      return statusUpdates.at(-1)
+    },
     async fire(event: Json): Promise<Json> {
-      const result = (await hooks.get(HOOK)!(event, (e) => ({ next: e }))) as { next: Json } | undefined
+      const result = (await hooks.get(HOOK)!(event, (e) => ({ next: e }))) as
+        | { next: Json }
+        | undefined
       return result?.next ?? event
     },
-    request: (name: string, input: Json = {}) => handlers.get(name)!(input)
+    request: (name: string, input: Json = {}) => handlers.get(name)!(input),
+    command: (name: string) => commands.get(name)!()
   }
 }
 
@@ -96,4 +120,50 @@ test('provider.test explains a missing setup instead of throwing', async () => {
   const worker = await mountWorker({ ...baseSettings, model: '' })
   const result = (await worker.request('provider.test')) as { ok: boolean }
   assert.equal(result.ok, false)
+})
+
+test('the status item is green with the latency after a suggestion', async () => {
+  const restore = stubFetch(200, { choices: [{ message: { content: '42' } }] })
+  try {
+    const worker = await mountWorker()
+    await worker.fire(asked)
+    const status = await worker.lastStatus()
+    assert.equal(status?.tone, 'success')
+    assert.match(String(status?.text), /^\d+\.\ds$/)
+    assert.match(String(status?.tooltip), /1 suggested/)
+  } finally {
+    restore()
+  }
+})
+
+test('the status item is yellow with the fix when the setup is incomplete', async () => {
+  const worker = await mountWorker({ ...baseSettings, model: '' })
+  const status = await worker.lastStatus()
+  assert.equal(status?.tone, 'warning')
+  assert.match(String(status?.tooltip), /Autocomplete panel/)
+})
+
+test('the status item is grey when off and red after a failed request', async () => {
+  const off = await mountWorker({ ...baseSettings, enabled: false })
+  assert.equal((await off.lastStatus())?.tone, 'neutral')
+
+  const restore = stubFetch(500, {})
+  try {
+    const worker = await mountWorker()
+    await worker.fire(asked)
+    const status = await worker.lastStatus()
+    assert.equal(status?.tone, 'danger')
+    assert.match(String(status?.tooltip), /HTTP 500/)
+  } finally {
+    restore()
+  }
+})
+
+test('the toggle command flips enabled and updates the status item', async () => {
+  const worker = await mountWorker()
+  assert.equal(await worker.command('toggle'), 'Autocomplete off')
+  assert.equal(worker.settings.enabled, false)
+  assert.equal((await worker.lastStatus())?.tone, 'neutral')
+  assert.equal(await worker.command('toggle'), 'Autocomplete on')
+  assert.equal(worker.settings.enabled, true)
 })
