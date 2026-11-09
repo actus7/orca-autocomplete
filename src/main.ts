@@ -2,6 +2,7 @@ import type { Activate, OrcaWorkerApi } from 'orca/worker'
 import { complete, type Provider, type ProviderFormat } from './complete.ts'
 import { explainFailure } from './explain.ts'
 import { pickLocale, translator, type Translate } from './i18n.ts'
+import { listModels } from './models.ts'
 import { presetFor } from './presets.ts'
 
 const SECRET_KEY = 'apiKey'
@@ -11,6 +12,7 @@ const STATUS_ITEM = 'status'
 const REQUEST_TIMEOUT_MS = 1800
 const CACHE_SIZE = 50
 const TEST_TIMEOUT_MS = 15_000
+const MODELS_TIMEOUT_MS = 10_000
 const ERROR_TEXT_CHARS = 120
 const LOG_REPEAT_MS = 60_000
 
@@ -43,6 +45,14 @@ async function readConfig(orca: OrcaWorkerApi): Promise<Config | null> {
       apiKey: (await orca.secrets.get(SECRET_KEY)) ?? '',
       maxTokens: Math.max(1, Math.floor(Number(settings.maxTokens) || 96))
     }
+  }
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return ''
   }
 }
 
@@ -253,6 +263,29 @@ const activate: Activate = (orca) => {
     stats.lastSlow = false
     void refreshStatus()
     return result
+  })
+
+  orca.panels.handle('models.list', async ({ format, baseUrl, key }) => {
+    const t = await translate()
+    const url = baseUrl.trim()
+    if (!/^https?:\/\//i.test(url) || !hostOf(url)) {
+      return { ok: false, models: [], message: t('test.needsSetup') }
+    }
+    // Why: the draft key lets people pick a model before saving; it is used once and not stored.
+    const apiKey = key.trim() || (await orca.secrets.get(SECRET_KEY)) || ''
+    try {
+      const models = await listModels(
+        { format: format === 'anthropic' ? 'anthropic' : 'openai', baseUrl: url, apiKey },
+        AbortSignal.timeout(MODELS_TIMEOUT_MS)
+      )
+      return { ok: true, models, message: '' }
+    } catch (error) {
+      return {
+        ok: false,
+        models: [],
+        message: explainFailure(error, t, hostOf(url), MODELS_TIMEOUT_MS)
+      }
+    }
   })
 
   orca.commands.register('toggle', async () => {

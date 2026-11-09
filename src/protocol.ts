@@ -21,6 +21,11 @@ declare module 'orca' {
     'status.get': { input: Record<string, never>; output: StatusSnapshot }
     /** Stores the key in the plugin's encrypted secrets; an empty string removes it. */
     'key.set': { input: { key: string }; output: { hasKey: boolean } }
+    /** The models a provider lists. A blank key uses the saved one; the key is never stored here. */
+    'models.list': {
+      input: { format: 'openai' | 'anthropic'; baseUrl: string; key: string }
+      output: { ok: boolean; models: string[]; message: string }
+    }
     /** One real completion against the configured provider. */
     'provider.test': {
       input: Record<string, never>

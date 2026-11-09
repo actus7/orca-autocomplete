@@ -276,3 +276,53 @@ test('the panel is told about every status change', async () => {
   assert.equal(worker.posts.at(-1)?.event, 'status.changed')
   assert.equal((worker.posts.at(-1)?.payload as Json).state, 'off')
 })
+
+function stubModelsFetch(): { seen: { url: string; headers: Record<string, string> }[]; restore: () => void } {
+  const real = globalThis.fetch
+  const seen: { url: string; headers: Record<string, string> }[] = []
+  globalThis.fetch = (async (url: string, init: { headers: Record<string, string> }) => {
+    seen.push({ url, headers: init.headers })
+    return new Response(JSON.stringify({ data: [{ id: 'b-model' }, { id: 'a-model' }, { id: 'text-embedding-3' }] }))
+  }) as never
+  return { seen, restore: () => void (globalThis.fetch = real) }
+}
+
+test('models.list uses the saved key when the draft is blank and lists code models sorted', async () => {
+  const { seen, restore } = stubModelsFetch()
+  try {
+    const worker = await mountWorker(keyedSettings, { apiKey: 'saved' })
+    const result = (await worker.request('models.list', { format: 'openai', baseUrl: 'https://api.openai.com/v1', key: '' })) as { ok: boolean; models: string[] }
+    assert.deepEqual(result.models, ['a-model', 'b-model'])
+    assert.equal(seen[0].url, 'https://api.openai.com/v1/models')
+    assert.equal(seen[0].headers.authorization, 'Bearer saved')
+  } finally {
+    restore()
+  }
+})
+
+test('models.list prefers the key being typed, so a model can be picked before saving', async () => {
+  const { seen, restore } = stubModelsFetch()
+  try {
+    const worker = await mountWorker(keyedSettings, { apiKey: 'saved' })
+    await worker.request('models.list', { format: 'openai', baseUrl: 'https://api.openai.com/v1', key: ' typed ' })
+    assert.equal(seen[0].headers.authorization, 'Bearer typed')
+    assert.equal(worker.secrets.apiKey, 'saved')
+  } finally {
+    restore()
+  }
+})
+
+test('models.list explains a rejected key and refuses an address that is not http(s)', async () => {
+  const restore = stubFetch(401, {})
+  try {
+    const worker = await mountWorker(keyedSettings)
+    const denied = (await worker.request('models.list', { format: 'openai', baseUrl: 'https://api.openai.com/v1', key: 'bad' })) as { ok: boolean; message: string }
+    assert.equal(denied.ok, false)
+    assert.match(denied.message, /rejected the key/)
+    const bad = (await worker.request('models.list', { format: 'openai', baseUrl: 'ftp://x', key: '' })) as { ok: boolean; message: string }
+    assert.equal(bad.ok, false)
+    assert.match(bad.message, /base URL/)
+  } finally {
+    restore()
+  }
+})

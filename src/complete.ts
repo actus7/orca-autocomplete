@@ -22,7 +22,7 @@ export type CompletionContext = {
 const CURSOR = '<CURSOR>'
 const PREFIX_CHARS = 6000
 const SUFFIX_CHARS = 2000
-const ANTHROPIC_VERSION = '2023-06-01'
+export const ANTHROPIC_VERSION = '2023-06-01'
 
 const SYSTEM_PROMPT =
   `You are a code completion engine. The user sends a file with ${CURSOR} marking the cursor. ` +

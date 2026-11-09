@@ -16,7 +16,7 @@ It takes about two minutes.
 
 1. **Install** the plugin from *Settings → Plugins*.
 2. **Open the Autocomplete panel**: the lightning icon in the right sidebar.
-3. **Choose your provider**, paste your API key and press **Save and test**. Ollama needs no key.
+3. **Choose your provider**, paste your API key, then type a model name or pick one from the list your provider offers. Press **Save and test**. Ollama needs no key.
 4. **Type in any file and pause for a moment.** The suggestion appears in gray.
 
 If something is not right, the panel says what happened and what to do next.
@@ -31,6 +31,8 @@ If something is not right, the panel says what happened and what to do next.
 | Ollama | No | Runs on your computer: free and private. Start Ollama first. |
 | Other, OpenAI-compatible | Optional | Any gateway or proxy with a `/chat/completions` endpoint. |
 | Other, Anthropic-compatible | Optional | Any endpoint with a `/v1/messages` endpoint. |
+
+**Pick the model from the list.** The panel loads the models your provider offers and narrows the list as you type, so you never have to remember an exact name. You can still type any name yourself.
 
 **Speed matters more than size.** Orca drops a suggestion that takes longer than about 2 seconds, so choose a small, fast model. The panel pre-fills a sensible one for each provider.
 
@@ -70,7 +72,7 @@ O painel, a barra de status e os avisos aparecem em português quando o Orca est
 **Começo rápido**
 1. Instale o plugin em *Settings → Plugins*.
 2. Abra o painel **Autocomplete** (o raio na barra lateral direita).
-3. Escolha o provedor, cole a chave de API e toque em **Salvar e testar**. O Ollama não precisa de chave.
+3. Escolha o provedor, cole a chave de API, depois digite o nome de um modelo ou escolha na lista do seu provedor. Toque em **Salvar e testar**. O Ollama não precisa de chave.
 4. Digite em qualquer arquivo e faça uma pausa. A sugestão aparece em cinza; **Tab** aceita e **Esc** descarta.
 
 **Privacidade:** o texto ao redor do cursor vai apenas para o provedor que você escolheu. A chave fica guardada criptografada pelo Orca. Não há rastreamento.

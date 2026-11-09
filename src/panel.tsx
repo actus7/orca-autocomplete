@@ -13,6 +13,7 @@ import {
   Select,
   set,
   settings,
+  Spinner,
   Stack,
   storage,
   Switch,
@@ -21,6 +22,7 @@ import {
   type StatusSnapshot
 } from 'orca'
 import { pickLocale, translator } from './i18n.ts'
+import { filterModels, MODEL_LIST_MAX_SHOWN } from './models.ts'
 import { PRESETS, presetById, presetFor, type PresetId } from './presets.ts'
 
 const tr = translator(pickLocale(env.locale))
@@ -38,6 +40,18 @@ const draftKey = atom('')
 const testing = atom(false)
 const outcome = atom<Outcome | null>(null)
 const providerOpen = atom<boolean | null>(null)
+const models = atom<string[]>([])
+const modelsPhase = atom<'idle' | 'loading' | 'done' | 'failed'>('idle')
+const modelsMessage = atom('')
+let modelsRun = 0
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host
+  } catch {
+    return ''
+  }
+}
 
 async function loadSettings(): Promise<void> {
   const saved = await settings.get()
@@ -49,15 +63,53 @@ async function loadSettings(): Promise<void> {
   set(model, String(saved.model ?? ''))
 }
 
+/** Whether asking the provider for its models can work: an address, and a key when one is needed. */
+function canLoadModels(hasKey: boolean): boolean {
+  const kind = presetById(read(presetId)).keyKind
+  return Boolean(hostOf(read(baseUrl))) && (kind !== 'required' || hasKey || read(draftKey).trim() !== '')
+}
+
+async function loadModels(): Promise<void> {
+  const run = ++modelsRun
+  set(modelsPhase, 'loading')
+  set(modelsMessage, '')
+  try {
+    const result = await plugin.request('models.list', {
+      format: presetById(read(presetId)).format,
+      baseUrl: read(baseUrl),
+      key: read(draftKey)
+    })
+    if (run === modelsRun) {
+      set(models, result.models)
+      set(modelsPhase, result.ok ? 'done' : 'failed')
+      set(modelsMessage, result.message)
+    }
+  } catch (error) {
+    if (run === modelsRun) {
+      set(modelsPhase, 'failed')
+      set(modelsMessage, error instanceof Error ? error.message : String(error))
+    }
+  }
+}
+
+function forgetModels(): void {
+  modelsRun += 1
+  set(models, [])
+  set(modelsPhase, 'idle')
+}
+
 /** Runs once before the first render. */
 export function setup(ctx: PanelContext): void {
   // Why: the worker has no UI language of its own; it reads this to speak the person's language.
   void storage.set('locale', env.locale).catch(() => undefined)
-  void loadSettings().catch(() => undefined)
-  void plugin
-    .request('status.get', {})
-    .then((snapshot) => set(status, snapshot))
-    .catch(() => undefined)
+  void (async () => {
+    await loadSettings()
+    const snapshot = await plugin.request('status.get', {})
+    set(status, snapshot)
+    if (canLoadModels(snapshot.hasKey)) {
+      await loadModels()
+    }
+  })().catch(() => undefined)
   ctx.subscriptions.push(
     plugin.on('status.changed', (snapshot) => set(status, snapshot)),
     settings.onDidChange(() => void loadSettings().catch(() => undefined))
@@ -68,10 +120,22 @@ function choosePreset(id: string): void {
   const preset = presetById(id)
   set(presetId, preset.id)
   set(outcome, null)
+  forgetModels()
   if (preset.baseUrl !== null) {
     set(baseUrl, preset.baseUrl)
     set(model, preset.model)
   }
+  if (preset.keyKind === 'none') {
+    void loadModels()
+  }
+}
+
+function editBaseUrl(value: string): void {
+  set(baseUrl, value)
+  // Why: typing a known address makes it that provider; any other address is a custom one.
+  set(presetId, presetFor(presetById(read(presetId)).format, value).id)
+  set(outcome, null)
+  forgetModels()
 }
 
 async function saveAndTest(): Promise<void> {
@@ -94,25 +158,13 @@ async function saveAndTest(): Promise<void> {
     set(outcome, result)
     if (result.ok) {
       set(providerOpen, false)
+      void loadModels()
     }
   } catch (error) {
     set(outcome, { ok: false, message: error instanceof Error ? error.message : String(error), ms: null })
   } finally {
     set(testing, false)
   }
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host
-  } catch {
-    return ''
-  }
-}
-
-/** "Where · which model", skipping whichever half is empty. */
-function summary(where: string, modelName: string): string {
-  return [where, modelName].filter(Boolean).join(' · ')
 }
 
 function seconds(ms: number): string {
@@ -159,6 +211,22 @@ function Notice() {
   return null
 }
 
+function BaseUrlField() {
+  const preset = presetById(read(presetId))
+  return (
+    <Stack gap="xs">
+      <Input
+        label={tr('baseUrl')}
+        placeholder="https://"
+        value={read(baseUrl)}
+        onChange={editBaseUrl}
+        onSubmit={() => void saveAndTest()}
+      />
+      <Text muted size="sm">{preset.baseUrl === null ? tr('baseUrl.hint') : tr('baseUrl.known')}</Text>
+    </Stack>
+  )
+}
+
 function KeyField(props: { hasKey: boolean }) {
   const preset = presetById(read(presetId))
   if (preset.keyKind === 'none') {
@@ -185,6 +253,58 @@ function KeyField(props: { hasKey: boolean }) {
   )
 }
 
+/** The provider's own list of models, narrowed by what is typed in the model field. */
+function ModelPicker(props: { hasKey: boolean }) {
+  const phase = read(modelsPhase)
+  const all = read(models)
+  const typed = read(model)
+  const matched = filterModels(all, typed)
+  const chosen = all.includes(typed.trim()) ? typed.trim() : ''
+  const capped = matched.slice(0, MODEL_LIST_MAX_SHOWN)
+  // Why: the chosen model must stay in the list even when it sorts beyond the first page.
+  const shown = chosen && !capped.includes(chosen) ? [chosen, ...capped.slice(0, -1)] : capped
+  const needsKey = presetById(read(presetId)).keyKind === 'required' && !props.hasKey && read(draftKey).trim() === ''
+  return (
+    <Stack gap="xs">
+      {phase === 'loading' ? <Spinner label={tr('models.loading')} /> : null}
+      {phase !== 'loading' && shown.length > 0 ? (
+        <Select
+          label={tr('models.pick')}
+          placeholder={tr('models.placeholder')}
+          value={chosen}
+          options={shown.map((id) => ({ value: id, label: id }))}
+          onChange={(value) => {
+            set(model, value)
+            set(outcome, null)
+          }}
+        />
+      ) : null}
+      {phase === 'done' && all.length === 0 ? <Text muted size="sm">{tr('models.none')}</Text> : null}
+      {phase === 'done' && matched.length > shown.length ? (
+        <Text muted size="sm">{tr('models.count', { shown: shown.length, total: matched.length })}</Text>
+      ) : null}
+      {phase === 'done' && all.length > 0 && matched.length === all.length && shown.length === all.length ? (
+        <Text muted size="sm">{tr('models.total', { total: all.length })}</Text>
+      ) : null}
+      {phase === 'failed' ? (
+        <Text tone="danger" size="sm">{tr('models.failed', { reason: read(modelsMessage) })}</Text>
+      ) : null}
+      {phase === 'idle' && needsKey ? <Text muted size="sm">{tr('models.needKey')}</Text> : null}
+      <Row>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon="refresh"
+          disabled={phase === 'loading' || !canLoadModels(props.hasKey)}
+          onPress={() => void loadModels()}
+        >
+          {tr('models.load')}
+        </Button>
+      </Row>
+    </Stack>
+  )
+}
+
 function ProviderForm(props: { hasKey: boolean }) {
   const preset = presetById(read(presetId))
   const busy = read(testing)
@@ -196,6 +316,7 @@ function ProviderForm(props: { hasKey: boolean }) {
         options={PRESETS.map((p) => ({ value: p.id, label: tr(`preset.${p.id}`) }))}
         onChange={choosePreset}
       />
+      <BaseUrlField />
       <KeyField hasKey={props.hasKey} />
       <Stack gap="xs">
         <Input
@@ -209,22 +330,8 @@ function ProviderForm(props: { hasKey: boolean }) {
           onSubmit={() => void saveAndTest()}
         />
         <Text muted size="sm">{tr('model.hint', { seconds: SLOW_SECONDS })}</Text>
+        <ModelPicker hasKey={props.hasKey} />
       </Stack>
-      {preset.baseUrl === null ? (
-        <Stack gap="xs">
-          <Input
-            label={tr('baseUrl')}
-            placeholder="https://"
-            value={read(baseUrl)}
-            onChange={(value) => {
-              set(baseUrl, value)
-              set(outcome, null)
-            }}
-            onSubmit={() => void saveAndTest()}
-          />
-          <Text muted size="sm">{tr('baseUrl.hint')}</Text>
-        </Stack>
-      ) : null}
       <Button icon="check" disabled={busy} onPress={() => void saveAndTest()}>
         {busy ? tr('testing') : tr('saveTest')}
       </Button>
@@ -243,6 +350,11 @@ function Help() {
       </Stack>
     </Collapsible>
   )
+}
+
+/** "Where · which model", skipping whichever half is empty. */
+function summary(where: string, modelName: string): string {
+  return [where, modelName].filter(Boolean).join(' · ')
 }
 
 export default function Panel() {
@@ -274,7 +386,10 @@ export default function Panel() {
       ) : null}
       <Collapsible
         title={tr('provider.title')}
-        description={summary(preset.baseUrl === null ? hostOf(read(baseUrl)) : tr(`preset.${preset.id}`), read(model))}
+        description={summary(
+          preset.baseUrl === null ? hostOf(read(baseUrl)) : tr(`preset.${preset.id}`),
+          read(model)
+        )}
         open={read(providerOpen) ?? needsAttention}
         onChange={(open) => set(providerOpen, open)}
       >
