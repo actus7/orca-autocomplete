@@ -1,10 +1,10 @@
 // Turns a failure into one sentence that says what happened and what to do next.
-import { ProviderHttpError } from './complete.ts'
+import { ProviderHttpError, type ProviderFormat } from './complete.ts'
 import type { Translate } from './i18n.ts'
 
 const LOCAL_HOST = /^(localhost|127\.|\[?::1)/i
 
-export function explainFailure(error: unknown, t: Translate, host: string, timeoutMs: number): string {
+export function explainFailure(error: unknown, t: Translate, host: string, timeoutMs: number, format?: ProviderFormat): string {
   const seconds = (timeoutMs / 1000).toString()
   if (error instanceof ProviderHttpError) {
     const { status } = error
@@ -13,6 +13,10 @@ export function explainFailure(error: unknown, t: Translate, host: string, timeo
     }
     if (status === 404) {
       return t('err.notFound')
+    }
+    // Why only Ollama: it answers 400 when the model has no support for a suffix, and says nothing more we read.
+    if (status === 400 && format === 'ollama') {
+      return t('err.noInsert')
     }
     if (status === 429) {
       return t('err.rateLimit')

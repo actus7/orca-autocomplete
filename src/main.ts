@@ -1,5 +1,5 @@
 import type { Activate, OrcaWorkerApi } from 'orca/worker'
-import { complete, type CompletionContext, type Provider, type ProviderFormat } from './complete.ts'
+import { complete, parseFormat, type CompletionContext, type Provider, type ProviderFormat } from './complete.ts'
 import { explainFailure } from './explain.ts'
 import { pickLocale, translator, type Translate } from './i18n.ts'
 import { LspManager } from './lsp/manager.ts'
@@ -82,7 +82,7 @@ async function readConfig(orca: OrcaWorkerApi): Promise<Config | null> {
   if (!/^https?:\/\//i.test(baseUrl) || !model) {
     return null
   }
-  const format: ProviderFormat = settings.format === 'anthropic' ? 'anthropic' : 'openai'
+  const format = parseFormat(settings.format)
   return {
     enabled: settings.enabled !== false,
     provider: {
@@ -275,7 +275,7 @@ const activate: Activate = (orca) => {
       return typed
     }
     const saved = await orca.settings.get()
-    const savedFormat: ProviderFormat = saved.format === 'anthropic' ? 'anthropic' : 'openai'
+    const savedFormat = parseFormat(saved.format)
     const sameProvider =
       savedFormat === format && sameAddress(String(saved.baseUrl ?? ''), url)
     return sameProvider ? await savedKey(orca, url) : ''
@@ -295,7 +295,7 @@ const activate: Activate = (orca) => {
       return { ok: true, message: '', ms: Date.now() - startedAt }
     } catch (error) {
       const host = new URL(config.provider.baseUrl).host
-      return { ok: false, message: explainFailure(error, t, host, TEST_TIMEOUT_MS), ms: null }
+      return { ok: false, message: explainFailure(error, t, host, TEST_TIMEOUT_MS, config.provider.format), ms: null }
     }
   }
 
@@ -352,7 +352,7 @@ const activate: Activate = (orca) => {
       } else {
         logFailure(error instanceof Error ? error.message : String(error))
         const host = new URL(config.provider.baseUrl).host
-        stats.lastError = explainFailure(error, await translate(), host, REQUEST_TIMEOUT_MS).slice(
+        stats.lastError = explainFailure(error, await translate(), host, REQUEST_TIMEOUT_MS, config.provider.format).slice(
           0,
           ERROR_TEXT_CHARS
         )
@@ -484,7 +484,7 @@ const activate: Activate = (orca) => {
     if (!/^https?:\/\//i.test(url) || !hostOf(url)) {
       return { ok: false, models: [], message: t('test.needsSetup') }
     }
-    const asked: ProviderFormat = format === 'anthropic' ? 'anthropic' : 'openai'
+    const asked = parseFormat(format)
     const apiKey = await keyForListing(asked, url, key.trim())
     try {
       const models = await listModels(
@@ -496,7 +496,7 @@ const activate: Activate = (orca) => {
       return {
         ok: false,
         models: [],
-        message: explainFailure(error, t, hostOf(url), MODELS_TIMEOUT_MS)
+        message: explainFailure(error, t, hostOf(url), MODELS_TIMEOUT_MS, asked)
       }
     }
   })
@@ -518,7 +518,7 @@ const activate: Activate = (orca) => {
     if (!/^https?:\/\//i.test(url) || !hostOf(url)) {
       return { results: [], message: t('test.needsSetup') }
     }
-    const asked: ProviderFormat = format === 'anthropic' ? 'anthropic' : 'openai'
+    const asked = parseFormat(format)
     const apiKey = await keyForListing(asked, url, key.trim())
     const ids = models
       .filter((id): id is string => typeof id === 'string' && id.trim() !== '')

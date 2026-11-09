@@ -17,6 +17,8 @@ declare module 'orca' {
     minimap: boolean
   }
   export type StatusState = 'on' | 'off' | 'setup' | 'slow' | 'error'
+  /** How a provider is asked; see ProviderFormat in src/complete.ts. */
+  export type ProviderFormatName = 'openai' | 'anthropic' | 'ollama' | 'mistral-fim'
   export type StatsSnapshot = {
     model: string
     /** When counting started (ms since 1970). */
@@ -53,7 +55,7 @@ declare module 'orca' {
     'key.set': { input: { key: string }; output: { hasKey: boolean } }
     /** The models a provider lists. A blank key uses the saved one; the key is never stored here. */
     'models.list': {
-      input: { format: 'openai' | 'anthropic'; baseUrl: string; key: string }
+      input: { format: ProviderFormatName; baseUrl: string; key: string }
       output: { ok: boolean; models: string[]; message: string }
     }
     /** The editor asks for a language server for its document; the answer says what is running or why not. */
@@ -93,7 +95,7 @@ declare module 'orca' {
     'stats.reset': { input: Record<string, never>; output: Record<string, never> }
     /** Times one real completion per model (the panel sends a few at a time); nothing is saved. */
     'models.bench': {
-      input: { format: 'openai' | 'anthropic'; baseUrl: string; key: string; models: string[] }
+      input: { format: ProviderFormatName; baseUrl: string; key: string; models: string[] }
       output: { results: { model: string; ok: boolean; ms: number | null }[]; message: string }
     }
     /** Median latency of the real suggestions each model gave, newest samples only. */

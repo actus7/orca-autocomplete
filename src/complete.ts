@@ -1,11 +1,24 @@
-// Pure request/response logic for both provider formats; src/main.ts wires it to Orca.
-import { findSecret } from './neversend.ts'
+// Pure request/response logic for every provider format; src/main.ts wires it to Orca.
+import { findSecretAround } from './neversend.ts'
 
-export type ProviderFormat = 'openai' | 'anthropic'
+/**
+ * How a provider is asked:
+ * - `openai`: a chat model (`/chat/completions`), told to answer with only the code to insert;
+ * - `anthropic`: the same through `/v1/messages`;
+ * - `ollama`: Ollama's `/api/generate` with a prompt and a suffix, so the model fills in the middle itself;
+ * - `mistral-fim`: Mistral's `/v1/fim/completions` (Codestral), the same idea.
+ */
+export type ProviderFormat = 'openai' | 'anthropic' | 'ollama' | 'mistral-fim'
+const FORMATS: readonly ProviderFormat[] = ['openai', 'anthropic', 'ollama', 'mistral-fim']
+
+/** A stored or typed value as a format; anything unknown is the chat format. */
+export function parseFormat(value: unknown): ProviderFormat {
+  return FORMATS.find((format) => format === value) ?? 'openai'
+}
 
 export type Provider = {
   format: ProviderFormat
-  /** For `openai`, the root that holds `/chat/completions` (usually ends in `/v1`). */
+  /** The root of the API: for `openai` the one that holds `/chat/completions` (usually ending in `/v1`). */
   baseUrl: string
   model: string
   /** Empty for local servers that need none. */
@@ -65,48 +78,71 @@ function joinUrl(base: string, path: string): string {
   return `${base.replace(/\/+$/, '')}${path}`
 }
 
-// Why no temperature: current Claude and OpenAI reasoning models reject it with HTTP 400.
-export function buildRequest(
-  provider: Provider,
-  ctx: CompletionContext
-): { url: string; init: { method: 'POST'; headers: Record<string, string>; body: string } } {
-  const user = buildUserPrompt(ctx)
-  const system = isProse(ctx.languageId) ? PROSE_SYSTEM_PROMPT : SYSTEM_PROMPT
+type Built = { url: string; init: { method: 'POST'; headers: Record<string, string>; body: string } }
+
+/** `https://host` and `https://host/v1` both name the same API root; this gives the one that ends in `/v1`. */
+export function withV1(base: string): string {
+  const root = base.replace(/\/+$/, '')
+  return root.endsWith('/v1') ? root : `${root}/v1`
+}
+
+/** Ollama serves its own API beside the `/v1` one, so the person may have given either address. */
+function withoutV1(base: string): string {
+  return base.replace(/\/+$/, '').replace(/\/v1$/, '')
+}
+
+const post = (url: string, headers: Record<string, string>, body: object): Built => ({
+  url,
+  init: { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) }
+})
+const bearer = (apiKey: string): Record<string, string> => (apiKey ? { authorization: `Bearer ${apiKey}` } : {})
+
+// Why a low temperature for the fill-in-the-middle formats: they continue code, and a steady answer is the useful one.
+// The chat formats send none: current Claude and OpenAI reasoning models reject it with HTTP 400.
+const FIM_TEMPERATURE = 0.2
+
+export function buildRequest(provider: Provider, ctx: CompletionContext): Built {
   const maxTokens = isProse(ctx.languageId) ? Math.min(provider.maxTokens, PROSE_MAX_TOKENS) : provider.maxTokens
-  if (provider.format === 'anthropic') {
-    // Why: accept both `https://host` and `https://host/v1` as the base.
-    const base = provider.baseUrl.replace(/\/+$/, '')
-    const url = joinUrl(base, base.endsWith('/v1') ? '/messages' : '/v1/messages')
-    const headers: Record<string, string> = {
-      'content-type': 'application/json',
-      'anthropic-version': ANTHROPIC_VERSION
-    }
-    if (provider.apiKey) {
-      headers['x-api-key'] = provider.apiKey
-    }
-    const body = {
-      model: provider.model,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: 'user', content: user }]
-    }
-    return { url, init: { method: 'POST', headers, body: JSON.stringify(body) } }
-  }
-  const headers: Record<string, string> = { 'content-type': 'application/json' }
-  if (provider.apiKey) {
-    headers.authorization = `Bearer ${provider.apiKey}`
-  }
-  const body = {
-    model: provider.model,
-    max_tokens: maxTokens,
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: user }
-    ]
-  }
-  return {
-    url: joinUrl(provider.baseUrl, '/chat/completions'),
-    init: { method: 'POST', headers, body: JSON.stringify(body) }
+  const { prefix, suffix } = windowOf(ctx)
+  switch (provider.format) {
+    case 'anthropic':
+      return post(
+        joinUrl(withV1(provider.baseUrl), '/messages'),
+        { 'anthropic-version': ANTHROPIC_VERSION, ...(provider.apiKey ? { 'x-api-key': provider.apiKey } : {}) },
+        {
+          model: provider.model,
+          max_tokens: maxTokens,
+          system: isProse(ctx.languageId) ? PROSE_SYSTEM_PROMPT : SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: buildUserPrompt(ctx) }]
+        }
+      )
+    case 'ollama':
+      // Why `stream: false`: Ollama streams by default, and one JSON answer is what is read here.
+      return post(joinUrl(withoutV1(provider.baseUrl), '/api/generate'), bearer(provider.apiKey), {
+        model: provider.model,
+        prompt: prefix,
+        suffix,
+        stream: false,
+        options: { num_predict: maxTokens, temperature: FIM_TEMPERATURE }
+      })
+    case 'mistral-fim':
+      return post(joinUrl(withV1(provider.baseUrl), '/fim/completions'), bearer(provider.apiKey), {
+        model: provider.model,
+        prompt: prefix,
+        suffix,
+        max_tokens: maxTokens,
+        temperature: FIM_TEMPERATURE,
+        stream: false
+      })
+    default:
+      return post(joinUrl(provider.baseUrl, '/chat/completions'), bearer(provider.apiKey), {
+        model: provider.model,
+        max_tokens: maxTokens,
+        messages: [
+          { role: 'system', content: isProse(ctx.languageId) ? PROSE_SYSTEM_PROMPT : SYSTEM_PROMPT },
+          { role: 'user', content: buildUserPrompt(ctx) }
+        ]
+      })
   }
 }
 
@@ -118,6 +154,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function extractText(format: ProviderFormat, json: unknown): string {
   if (!isRecord(json)) {
     return ''
+  }
+  if (format === 'ollama') {
+    return typeof json.response === 'string' ? json.response : ''
   }
   if (format === 'anthropic') {
     const blocks = Array.isArray(json.content) ? json.content : []
@@ -204,8 +243,9 @@ export async function complete(
   fetchImpl: FetchLike = fetch
 ): Promise<string> {
   // Why here: every request to a provider goes through this function.
-  const around = `${ctx.prefix.slice(-(PREFIX_CHARS + SECRET_MARGIN_CHARS))}\n${ctx.suffix.slice(0, SUFFIX_CHARS + SECRET_MARGIN_CHARS)}`
-  if (findSecret(around)) {
+  const before = ctx.prefix.slice(-(PREFIX_CHARS + SECRET_MARGIN_CHARS))
+  const after = ctx.suffix.slice(0, SUFFIX_CHARS + SECRET_MARGIN_CHARS)
+  if (findSecretAround(before, after, ctx.path)) {
     return ''
   }
   const { url, init } = buildRequest(provider, ctx)

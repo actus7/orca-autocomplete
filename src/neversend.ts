@@ -12,8 +12,11 @@ const PLACEHOLDER = /^(?:x{3,}|\*{3,}|\.{3,}|<[^>]*>|\$\{[^}]*\}|\{\{[^}]*\}\}|y
 const RULES: readonly Rule[] = [
   // Either end of the block: a window can hold the middle and one marker, or only the body.
   { kind: 'private key', pattern: /-----(?:BEGIN|END) (?:[A-Z]+ )*PRIVATE KEY(?: BLOCK)?-----/ },
-  // The body of a key or certificate: several full lines of base64, as PEM and MIME wrap them.
-  { kind: 'key body', pattern: /(?:^[A-Za-z0-9+/]{60,80}={0,2}[ \t]*\r?\n){3}/m },
+  // The body of a key or certificate: several full lines of base64, as PEM and MIME wrap them. The lines
+  // may be indented (a YAML `key: |` block) or quoted with a comma after them (a JSON or JS array of lines).
+  { kind: 'key body', pattern: /(?:^[ \t]*["']?[A-Za-z0-9+/]{60,80}={0,2}["']?[ \t]*,?[ \t]*\r?\n){3}/m },
+  // The same body folded into one string, its line breaks written as the two characters `\n`.
+  { kind: 'key body', pattern: /(?:[A-Za-z0-9+/]{60,80}={0,2}\\n){3}/ },
   { kind: 'AWS access key', pattern: /\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[0-9A-Z]{16}\b/ },
   { kind: 'AWS secret key', pattern: /aws_secret_access_key\s*[=:]\s*["']?[A-Za-z0-9/+=]{40}\b/i },
   { kind: 'API key (sk-)', pattern: /\bsk-(?:ant-|proj-|live-|or-)?[A-Za-z0-9_-]{20,}/ },
@@ -27,6 +30,16 @@ const RULES: readonly Rule[] = [
 
 // A name that says "secret" assigned a long literal: `apiKey = "…"`, `password: '…'`.
 const ASSIGNED_SECRET = /(?:pass(?:word|wd)?|secret|api[_-]?key|access[_-]?key|auth[_-]?token|private[_-]?key|token)["']?\s*[:=]\s*["']([^"'\s]{16,})["']/gi
+
+/**
+ * What kind of secret the text around a cursor seems to hold, or null. The text is looked at three
+ * ways, because a secret can show in only one: as the file reads, with a line break at the cursor (a
+ * secret that ends a line), joined with nothing between (a token the cursor sits inside), and with the
+ * file's name in front (so a name that gives it away is seen too).
+ */
+export function findSecretAround(before: string, after: string, name = ''): string | null {
+  return findSecret(`${name}\n${before}\n${after}`) ?? findSecret(`${before}${after}`)
+}
 
 /** What kind of secret the text seems to hold, or null. Never returns the secret itself. */
 export function findSecret(text: string): string | null {

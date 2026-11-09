@@ -138,3 +138,13 @@ test('rankModels lists untested likely-fast names before the rest, in the provid
   assert.deepEqual(ranked, ['x-haiku', 'y-mini', 'big-model', 'opus-max'])
   assert.equal(isLikelyFast('gemini-pro'), false)
 })
+
+test('models are listed under /v1 for Ollama and Mistral, whichever address was given', () => {
+  for (const base of ['http://localhost:11434', 'http://localhost:11434/', 'http://localhost:11434/v1']) {
+    assert.equal(buildModelsRequest({ format: 'ollama', baseUrl: base, apiKey: '' }).url, 'http://localhost:11434/v1/models', base)
+  }
+  assert.equal(buildModelsRequest({ format: 'mistral-fim', baseUrl: 'https://api.mistral.ai', apiKey: 'k' }).url, 'https://api.mistral.ai/v1/models')
+  assert.equal(buildModelsRequest({ format: 'mistral-fim', baseUrl: 'https://api.mistral.ai/v1', apiKey: 'k' }).init.headers.authorization, 'Bearer k')
+  // The chat format keeps asking exactly where it was told to.
+  assert.equal(buildModelsRequest({ format: 'openai', baseUrl: 'https://x.test/api/v1/', apiKey: '' }).url, 'https://x.test/api/v1/models')
+})

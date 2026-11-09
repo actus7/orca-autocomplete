@@ -4,7 +4,7 @@
 
 Gray suggestions as you type, from the AI provider you choose. Press **Tab** to accept one, **Esc** to dismiss it.
 
-Works with **OpenAI**, **Anthropic**, **OpenRouter**, **Ollama** (free, on your computer) and any API that speaks the OpenAI or Anthropic format.
+Works with **OpenAI**, **Anthropic**, **OpenRouter**, **Mistral / Codestral**, **Ollama** (free, on your computer) and any API that speaks the OpenAI or Anthropic format.
 
 > **Requires Orca 1.4.248 or newer.** The plugin brings its own editor (Monaco), so it does not depend on any change to Orca itself.
 
@@ -42,11 +42,14 @@ If something is not right, the panel says what happened and what to do next.
 | OpenAI | Yes | Pick a small, fast model. |
 | Anthropic (Claude) | Yes | A Haiku-class model is a good fit. |
 | OpenRouter | Yes | One key, many models. |
-| Ollama | No | Runs on your computer: free and private. Start Ollama first. |
+| Ollama | No | Runs on your computer: free and private. Uses Ollama's own API, which fills in the middle of code, so pick a code model such as `qwen2.5-coder`. Start Ollama first. |
+| Mistral / Codestral | Yes | `codestral-latest` is made to fill in code between the text before and after the cursor. |
 | Other, OpenAI-compatible | Optional | Any gateway or proxy with a `/chat/completions` endpoint. |
 | Other, Anthropic-compatible | Optional | Any endpoint with a `/v1/messages` endpoint. |
 
 **Pick the model from the list, or type its name.** A short list (up to 15 models) is just a picker, with a small link for a model it does not show. A long list gets a search box and a second tab to type the name. If the list cannot be loaded, you get a plain text field. Models are listed with how fast they are: a time followed by a × (for example `0.6s (14×)`) is the median of your own real suggestions, which is the most honest number. Where it makes sense (Ollama, OpenRouter and other long lists, not OpenAI or Anthropic) **Test speed** times up to 12 models with one short request each, your current model first. A star marks the fastest, a cross marks models that failed or answered something unusable, and **Use the fastest** selects the best.
+
+**Two ways to ask.** Chat providers (OpenAI, Anthropic, OpenRouter, the *Other* options) are told to answer with only the code to insert. Ollama and Mistral are given the text before and the text after the cursor as separate fields and fill the gap themselves, which is what they are trained for.
 
 **Speed matters more than size.** A suggestion that takes longer than 1.8 seconds arrives after you have moved on, so the plugin drops it. Choose a small, fast model. The panel pre-fills a sensible one for each provider.
 

@@ -33,7 +33,8 @@ test('translate fills placeholders and leaves unknown ones visible', () => {
 test('presetFor finds known providers, ignoring a trailing slash and case', () => {
   assert.equal(presetFor('openai', 'https://api.openai.com/v1/').id, 'openai')
   assert.equal(presetFor('anthropic', 'HTTPS://api.anthropic.com').id, 'anthropic')
-  assert.equal(presetFor('openai', 'http://localhost:11434/v1').id, 'ollama')
+  assert.equal(presetFor('ollama', 'http://localhost:11434/v1').id, 'ollama')
+  assert.equal(presetFor('mistral-fim', 'https://api.mistral.ai/v1').id, 'mistral')
 })
 
 test('presetFor falls back to the custom preset of the same format', () => {
@@ -56,4 +57,18 @@ test('explainFailure says what to do for each kind of failure', () => {
   assert.match(explain(new TypeError('fetch failed')), /Could not reach api\.example\.com\. Check/)
   assert.match(explain(new TypeError('fetch failed'), 'localhost:11434'), /Is the server running/)
   assert.equal(explain(new Error('odd')), 'odd')
+})
+
+test('presetFor keeps a changed address of Ollama or Mistral on its own format instead of falling back to OpenAI', () => {
+  assert.equal(presetFor('ollama', 'http://my-server:11434/v1').id, 'ollama')
+  assert.equal(presetFor('mistral-fim', 'https://eu.mistral.example/v1').id, 'mistral')
+  assert.equal(presetFor('openai', 'http://my-server:11434/v1').id, 'custom-openai')
+})
+
+test('a 400 from Ollama says the model may not fill in the middle, and other 400s do not', () => {
+  const t = translator('en')
+  const bad = new ProviderHttpError(400)
+  assert.match(explainFailure(bad, t, 'localhost:11434', 1800, 'ollama'), /fill in the middle/)
+  assert.doesNotMatch(explainFailure(bad, t, 'api.openai.com', 1800, 'openai'), /fill in the middle/)
+  assert.doesNotMatch(explainFailure(bad, t, 'api.mistral.ai', 1800, 'mistral-fim'), /fill in the middle/)
 })

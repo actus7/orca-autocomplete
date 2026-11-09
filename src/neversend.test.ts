@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { findSecret } from './neversend.ts'
+import { findSecret, findSecretAround } from './neversend.ts'
 
 // Built from pieces so this file does not itself look like it holds secrets.
 const A = (n: number, c = 'A'): string => c.repeat(n)
@@ -61,4 +61,47 @@ const two = 1`,
 test('placeholders in an assignment are not secrets, but a real-looking value next to them still is', () => {
   assert.equal(findSecret(`apiKey = "your_api_key_here_12345"`), null)
   assert.equal(findSecret(`apiKey = "${A(24, 'x')}"\nsecret = "${A(24, 'k')}"`), 'secret assigned in code')
+})
+
+const LINE = (c: string): string => c.repeat(64)
+const BACKSLASH_N = `${String.fromCharCode(92)}n`
+
+test('the body of a key is recognised however it is laid out in a file', () => {
+  const lines = [LINE('Q'), LINE('w'), LINE('e')]
+  const layouts: Record<string, string> = {
+    'indented YAML block': `key: |\n${lines.map((l) => `    ${l}`).join('\n')}\n`,
+    'quoted JSON array': `[\n${lines.map((l) => `  "${l}",`).join('\n')}\n]\n`,
+    'single quotes, no comma': `${lines.map((l) => `'${l}'`).join('\n')}\n`,
+    'Windows line ends': `${lines.join('\r\n')}\r\n`,
+    'folded into one string with escaped line breaks': `"${lines.join(BACKSLASH_N)}${BACKSLASH_N}"`
+  }
+  for (const [name, text] of Object.entries(layouts)) {
+    assert.equal(findSecret(text), 'key body', name)
+  }
+})
+
+// Why: a lock file or a list of hashes is made of short lines and is not a key.
+test('short or few lines of base64 are not taken for a key body', () => {
+  assert.equal(findSecret(`${LINE('Q')}\n${LINE('w')}\nconst two = 1\n`), null)
+  assert.equal(findSecret(`${'Q'.repeat(40)}\n${'w'.repeat(40)}\n${'e'.repeat(40)}\n`), null)
+  assert.equal(findSecret(`    ${'Q'.repeat(64)}`), null)
+})
+
+test('a token the cursor sits inside is seen whole, though each side alone looks like nothing', () => {
+  const before = `const key = "sk-${'a'.repeat(12)}`
+  const after = `${'a'.repeat(12)}";`
+  assert.equal(findSecret(before), null)
+  assert.equal(findSecret(after), null)
+  assert.equal(findSecretAround(before, after), 'API key (sk-)')
+})
+
+test('a secret in the name of the file is seen too', () => {
+  assert.equal(findSecretAround('const a = 1', '', `sk-${'a'.repeat(30)}.ts`), 'API key (sk-)')
+  assert.equal(findSecretAround('const a = 1', '', 'src/a.ts'), null)
+})
+
+test('findSecretAround still finds a secret on either side, and leaves ordinary code alone', () => {
+  assert.equal(findSecretAround(`x = "ghp_${'a'.repeat(36)}"`, ''), 'GitHub token')
+  assert.equal(findSecretAround('', `x = "ghp_${'a'.repeat(36)}"`), 'GitHub token')
+  assert.equal(findSecretAround('const total = ', ';\nreturn total\n', 'src/a.ts'), null)
 })

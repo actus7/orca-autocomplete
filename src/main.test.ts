@@ -454,7 +454,7 @@ test('models.list sends no key at all to a server that needs none, even a typed 
   const { seen, restore } = stubModelsFetch()
   try {
     const worker = await mountWorker(keyedSettings, { apiKey: 'saved' })
-    await worker.request('models.list', { format: 'openai', baseUrl: 'http://localhost:11434/v1', key: 'typed' })
+    await worker.request('models.list', { format: 'ollama', baseUrl: 'http://localhost:11434/v1', key: 'typed' })
     assert.equal('authorization' in seen[0].headers, false)
   } finally {
     restore()
@@ -538,7 +538,7 @@ test('models.bench never sends the saved key to another address, nor any key to 
   try {
     const worker = await mountWorker(keyedSettings, { apiKey: 'saved' })
     await worker.request('models.bench', { format: 'openai', baseUrl: 'https://openrouter.ai/api/v1', key: '', models: ['m'] })
-    await worker.request('models.bench', { format: 'openai', baseUrl: 'http://localhost:11434/v1', key: 'typed', models: ['m'] })
+    await worker.request('models.bench', { format: 'ollama', baseUrl: 'http://localhost:11434/v1', key: 'typed', models: ['m'] })
     await worker.request('models.bench', { ...benchAsk, models: ['m'] })
     assert.equal('authorization' in seen[0].headers, false)
     assert.equal('authorization' in seen[1].headers, false)

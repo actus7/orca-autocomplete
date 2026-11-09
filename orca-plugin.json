@@ -36,11 +36,15 @@
         "type": "string",
         "enum": [
           "openai",
-          "anthropic"
+          "anthropic",
+          "ollama",
+          "mistral-fim"
         ],
         "enumLabels": [
           "OpenAI-compatible (/chat/completions)",
-          "Anthropic-compatible (/v1/messages)"
+          "Anthropic-compatible (/v1/messages)",
+          "Ollama (/api/generate, fills in the middle)",
+          "Mistral / Codestral (/v1/fim/completions)"
         ],
         "default": "openai"
       },

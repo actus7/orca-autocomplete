@@ -1,5 +1,5 @@
 // Lists the models a provider offers, so people can pick one instead of typing its name.
-import { ANTHROPIC_VERSION, ProviderHttpError, type Provider } from './complete.ts'
+import { ANTHROPIC_VERSION, ProviderHttpError, withV1, type Provider } from './complete.ts'
 
 type ListTarget = Pick<Provider, 'format' | 'baseUrl' | 'apiKey'>
 
@@ -25,7 +25,9 @@ export function buildModelsRequest(target: ListTarget): {
   if (target.apiKey) {
     headers.authorization = `Bearer ${target.apiKey}`
   }
-  return { url: `${base}/models`, init: { method: 'GET', headers } }
+  // Why for Ollama and Mistral too: both list their models the OpenAI way, under `/v1`, whichever address was given.
+  const root = target.format === 'ollama' || target.format === 'mistral-fim' ? withV1(base) : base
+  return { url: `${root}/models`, init: { method: 'GET', headers } }
 }
 
 /** Model ids from a `{ data: [{ id }] }` answer, without non-code models, sorted and unique. */

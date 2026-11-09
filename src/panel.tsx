@@ -25,6 +25,7 @@ import {
   type StatsSnapshot,
   type StatusSnapshot
 } from 'orca'
+import { parseFormat } from './complete.ts'
 import { pickLocale, translator } from './i18n.ts'
 import {
   BENCH_BATCH_SIZE,
@@ -78,7 +79,7 @@ function hostOf(url: string): string {
 
 async function loadSettings(): Promise<void> {
   const saved = await settings.get()
-  const format = saved.format === 'anthropic' ? 'anthropic' : 'openai'
+  const format = parseFormat(saved.format)
   const url = String(saved.baseUrl ?? '')
   set(enabled, saved.enabled !== false)
   set(presetId, presetFor(format, url).id)

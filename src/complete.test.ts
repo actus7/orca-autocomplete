@@ -7,6 +7,7 @@ import {
   complete,
   extractText,
   isProse,
+  parseFormat,
   type CompletionContext,
   type FetchLike,
   type Provider
@@ -214,5 +215,86 @@ test('the body of a long key is caught even when its first line is far out of si
   assert.ok(!sent.includes('BEGIN'), 'the marker is not in what is sent')
   const counter = { calls: 0 }
   assert.equal(await complete(openai, { ...ctx, prefix }, AbortSignal.timeout(1000), okFetch(counter)), '')
+  assert.equal(counter.calls, 0)
+})
+
+const ollama: Provider = { ...openai, format: 'ollama', baseUrl: 'http://localhost:11434/v1', apiKey: '' }
+const mistral: Provider = { ...openai, format: 'mistral-fim', baseUrl: 'https://api.mistral.ai/v1', model: 'codestral-latest' }
+const bodyOf = (built: ReturnType<typeof buildRequest>): Record<string, any> => JSON.parse(built.init.body) // eslint-disable-line @typescript-eslint/no-explicit-any
+
+test('ollama is asked through its own API, with the text before and after the cursor as separate fields', () => {
+  const built = buildRequest(ollama, ctx)
+  assert.equal(built.url, 'http://localhost:11434/api/generate')
+  assert.deepEqual(bodyOf(built), {
+    model: 'm',
+    prompt: 'const x = ',
+    suffix: ';\n',
+    stream: false,
+    options: { num_predict: 64, temperature: 0.2 }
+  })
+  assert.equal('authorization' in built.init.headers, false, 'no key, no header')
+  assert.equal(buildRequest({ ...ollama, apiKey: 'k' }, ctx).init.headers.authorization, 'Bearer k')
+})
+
+test('the ollama address works whether or not the person gave the /v1 root, with or without a slash', () => {
+  for (const base of ['http://localhost:11434', 'http://localhost:11434/', 'http://localhost:11434/v1', 'http://localhost:11434/v1/']) {
+    assert.equal(buildRequest({ ...ollama, baseUrl: base }, ctx).url, 'http://localhost:11434/api/generate', base)
+  }
+})
+
+test('mistral fill-in-the-middle sends the prompt and suffix to /v1/fim/completions with a bearer key', () => {
+  const built = buildRequest(mistral, ctx)
+  assert.equal(built.url, 'https://api.mistral.ai/v1/fim/completions')
+  assert.equal(buildRequest({ ...mistral, baseUrl: 'https://api.mistral.ai' }, ctx).url, 'https://api.mistral.ai/v1/fim/completions')
+  assert.equal(built.init.headers.authorization, 'Bearer k')
+  assert.deepEqual(bodyOf(built), {
+    model: 'codestral-latest',
+    prompt: 'const x = ',
+    suffix: ';\n',
+    max_tokens: 64,
+    temperature: 0.2,
+    stream: false
+  })
+})
+
+test('the fill-in-the-middle formats send only the window around the cursor, and the chat formats send no temperature', () => {
+  const long = { ...ctx, prefix: `${'p'.repeat(7000)}`, suffix: `${'s'.repeat(3000)}` }
+  for (const provider of [ollama, mistral]) {
+    const body = bodyOf(buildRequest(provider, long))
+    assert.equal(body.prompt.length, 6000)
+    assert.equal(body.suffix.length, 2000)
+  }
+  assert.equal('temperature' in bodyOf(buildRequest(openai, ctx)), false)
+  assert.equal('temperature' in bodyOf(buildRequest(anthropic, ctx)), false)
+})
+
+test('writing in a document still limits how much a fill-in-the-middle model writes', () => {
+  assert.equal(bodyOf(buildRequest(ollama, prose)).options.num_predict, 48)
+  assert.equal(bodyOf(buildRequest(mistral, prose)).max_tokens, 48)
+  assert.equal(bodyOf(buildRequest({ ...ollama, maxTokens: 16 }, prose)).options.num_predict, 16)
+})
+
+test('the text of each answer is read from where its format puts it', () => {
+  assert.equal(extractText('ollama', { response: 'a + b;', done: true }), 'a + b;')
+  assert.equal(extractText('ollama', { response: 5 }), '')
+  assert.equal(extractText('mistral-fim', { choices: [{ message: { content: 'a + b;' } }] }), 'a + b;')
+  assert.equal(extractText('mistral-fim', { response: 'nope' }), '')
+})
+
+test('a fill-in-the-middle answer goes through the same clean-up as any other', async () => {
+  const fetchImpl: FetchLike = async () => ({ ok: true, status: 200, json: async () => ({ response: 'const x = 42;\n' }), text: async () => '' })
+  // The model repeated what is before the cursor ('const x = '): that repeat is cut, the rest is kept.
+  assert.equal(await complete(ollama, ctx, AbortSignal.timeout(1000), fetchImpl), '42;'+String.fromCharCode(10))
+})
+
+test('parseFormat accepts the four formats and turns anything else into the chat format', () => {
+  assert.deepEqual(['openai', 'anthropic', 'ollama', 'mistral-fim'].map(parseFormat), ['openai', 'anthropic', 'ollama', 'mistral-fim'])
+  assert.deepEqual([undefined, null, 'x', 3].map(parseFormat), ['openai', 'openai', 'openai', 'openai'])
+})
+
+test('nothing is sent when the cursor sits inside a token, though neither side holds enough of it', async () => {
+  const counter = { calls: 0 }
+  const input = { ...ctx, prefix: `const key = "sk-${'a'.repeat(12)}`, suffix: `${'a'.repeat(12)}";` }
+  assert.equal(await complete(openai, input, AbortSignal.timeout(1000), okFetch(counter)), '')
   assert.equal(counter.calls, 0)
 })
