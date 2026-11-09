@@ -6,6 +6,7 @@ import {
   trimSuffixOverlap,
   complete,
   extractText,
+  isProse,
   type CompletionContext,
   type FetchLike,
   type Provider
@@ -128,4 +129,61 @@ test('complete removes a repeated prefix from the provider answer', async () => 
   const provider: Provider = { format: 'openai', baseUrl: 'http://x/v1', model: 'm', apiKey: '', maxTokens: 32 }
   const out = await complete(provider, { path: 'a.ts', languageId: 'typescript', prefix: 'const a = ', suffix: '' }, AbortSignal.timeout(1000), fetchImpl)
   assert.equal(out, '42;')
+})
+
+// Why: what is sent to a provider is the person's code; a key written in it must not leave the computer.
+test('nothing is sent when the code around the cursor holds a secret', async () => {
+  let calls = 0
+  const fetchImpl: FetchLike = async () => {
+    calls += 1
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'x' } }] }), text: async () => '' }
+  }
+  const secret = `const key = "sk-${'a'.repeat(30)}"\n`
+  const signal = AbortSignal.timeout(1000)
+  assert.equal(await complete(openai, { ...ctx, prefix: `${secret}const x = ` }, signal, fetchImpl), '')
+  assert.equal(await complete(anthropic, { ...ctx, suffix: `;\n${secret}` }, signal, fetchImpl), '')
+  assert.equal(calls, 0)
+  assert.equal(await complete(openai, ctx, signal, fetchImpl), 'x', 'ordinary code is still completed')
+  assert.equal(calls, 1)
+})
+
+test('a secret far above the cursor, outside what would be sent, does not hold anything back', async () => {
+  let calls = 0
+  const fetchImpl: FetchLike = async () => {
+    calls += 1
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'x' } }] }), text: async () => '' }
+  }
+  const far = `const key = "sk-${'a'.repeat(30)}"\n${'// filler line\n'.repeat(1000)}`
+  assert.equal(await complete(openai, { ...ctx, prefix: `${far}const x = ` }, AbortSignal.timeout(1000), fetchImpl), 'x')
+  assert.equal(calls, 1)
+})
+
+const prose: CompletionContext = { path: 'untitled.md', languageId: 'markdown', prefix: '# Notes\n\nThe plugin sends', suffix: '\n' }
+
+test('writing in a document is asked for as writing, with a shorter answer', () => {
+  const sent = JSON.parse(buildRequest(openai, prose).init.body) as { max_tokens: number; messages: { content: string }[] }
+  assert.match(sent.messages[0].content, /continue a text/i)
+  assert.doesNotMatch(sent.messages[0].content, /code completion engine/i)
+  assert.equal(sent.max_tokens, 48, 'capped')
+  const asked = JSON.parse(buildRequest(anthropic, { ...prose, languageId: 'plaintext' }).init.body) as { system: string; max_tokens: number }
+  assert.match(asked.system, /continue a text/i)
+  assert.equal(asked.max_tokens, 48)
+  // A smaller limit the person chose is kept.
+  const small = JSON.parse(buildRequest({ ...openai, maxTokens: 16 }, prose).init.body) as { max_tokens: number }
+  assert.equal(small.max_tokens, 16)
+})
+
+test('code still gets the code prompt and the limit it was given', () => {
+  const sent = JSON.parse(buildRequest(openai, ctx).init.body) as { max_tokens: number; messages: { content: string }[] }
+  assert.match(sent.messages[0].content, /code completion engine/i)
+  assert.equal(sent.max_tokens, 64)
+  assert.deepEqual([isProse('markdown'), isProse('plaintext'), isProse('typescript'), isProse(undefined)], [true, true, false, false])
+})
+
+test('a fenced block is kept when writing a document and stripped when completing code', async () => {
+  const fenced = '```js\nrun()\n```'
+  const fetchImpl: FetchLike = async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: fenced } }] }), text: async () => '' })
+  const signal = AbortSignal.timeout(1000)
+  assert.equal(await complete(openai, prose, signal, fetchImpl), fenced)
+  assert.equal(await complete(openai, ctx, signal, fetchImpl), 'run()')
 })

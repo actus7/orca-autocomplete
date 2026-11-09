@@ -44,7 +44,8 @@ const GENERIC_LANGUAGES = [
   { id: 'powershell', title: 'PowerShell', dir: 'powershell', extensions: ['.ps1'] },
   { id: 'bat', title: 'Batch', dir: 'bat', extensions: ['.bat'] },
   { id: 'scala', title: 'Scala', dir: 'scala', extensions: ['.scala'] },
-  { id: 'elixir', title: 'Elixir', dir: 'elixir', extensions: ['.ex', '.exs'] },
+  // `.exs` is left out: the catalog's listing text for this editor is limited to 160 characters and is at the limit.
+  { id: 'elixir', title: 'Elixir', dir: 'elixir', extensions: ['.ex'] },
   { id: 'clojure', title: 'Clojure', dir: 'clojure', extensions: ['.clj'] },
   { id: 'perl', title: 'Perl', dir: 'perl', extensions: ['.pl'] },
   { id: 'fsharp', title: 'F#', dir: 'fsharp', extensions: ['.fs'] },
@@ -59,7 +60,8 @@ export const GENERIC = {
   id: 'generic',
   title: 'Code',
   dir: '',
-  extensions: GENERIC_LANGUAGES.flatMap((language) => language.extensions),
+  // `.txt` is text with no grammar of its own: it opens here and is recognised as plain text.
+  extensions: [...GENERIC_LANGUAGES.flatMap((language) => language.extensions), '.txt'],
   filenames: GENERIC_LANGUAGES.flatMap((language) => language.filenames ?? [])
 }
 

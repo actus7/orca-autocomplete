@@ -1,4 +1,5 @@
 // Pure request/response logic for both provider formats; src/main.ts wires it to Orca.
+import { findSecret } from './neversend.ts'
 
 export type ProviderFormat = 'openai' | 'anthropic'
 
@@ -31,10 +32,28 @@ const SYSTEM_PROMPT =
   'statement ends: never write code that belongs after it, and never repeat code that is already ' +
   'before or after the cursor. No explanation and no markdown fences. Reply with nothing if unsure.'
 
+/** The part of the file that is sent: the text just before the cursor and just after it, capped. */
+function windowOf(ctx: CompletionContext): { prefix: string; suffix: string } {
+  return { prefix: ctx.prefix.slice(-PREFIX_CHARS), suffix: ctx.suffix.slice(0, SUFFIX_CHARS) }
+}
+
+/** Writing, not code: the answer is plain words, so it is asked for and cleaned up differently. */
+export function isProse(languageId: string | undefined): boolean {
+  return languageId === 'markdown' || languageId === 'plaintext'
+}
+
+const PROSE_SYSTEM_PROMPT =
+  `You continue a text someone is writing. The user sends a document with ${CURSOR} marking where they are writing. ` +
+  'Reply with ONLY the words to insert at the cursor: usually the rest of the sentence, and at most one more short sentence. ' +
+  'Write in the same language, tone and format (headings, lists, links) as the text around the cursor. ' +
+  'Never repeat text that is already before or after the cursor, and never invent facts, names or numbers the document does not give. ' +
+  'No explanation, no quotation marks around your answer, and no markdown fences unless the cursor is already inside one. Reply with nothing if unsure.'
+// Why shorter: a sentence ahead is a help; a paragraph is a distraction in prose.
+const PROSE_MAX_TOKENS = 48
+
 export function buildUserPrompt(ctx: CompletionContext): string {
   const language = ctx.languageId ? ` (${ctx.languageId})` : ''
-  const prefix = ctx.prefix.slice(-PREFIX_CHARS)
-  const suffix = ctx.suffix.slice(0, SUFFIX_CHARS)
+  const { prefix, suffix } = windowOf(ctx)
   return `File: ${ctx.path}${language}\n\n${prefix}${CURSOR}${suffix}`
 }
 
@@ -48,6 +67,8 @@ export function buildRequest(
   ctx: CompletionContext
 ): { url: string; init: { method: 'POST'; headers: Record<string, string>; body: string } } {
   const user = buildUserPrompt(ctx)
+  const system = isProse(ctx.languageId) ? PROSE_SYSTEM_PROMPT : SYSTEM_PROMPT
+  const maxTokens = isProse(ctx.languageId) ? Math.min(provider.maxTokens, PROSE_MAX_TOKENS) : provider.maxTokens
   if (provider.format === 'anthropic') {
     // Why: accept both `https://host` and `https://host/v1` as the base.
     const base = provider.baseUrl.replace(/\/+$/, '')
@@ -61,8 +82,8 @@ export function buildRequest(
     }
     const body = {
       model: provider.model,
-      max_tokens: provider.maxTokens,
-      system: SYSTEM_PROMPT,
+      max_tokens: maxTokens,
+      system,
       messages: [{ role: 'user', content: user }]
     }
     return { url, init: { method: 'POST', headers, body: JSON.stringify(body) } }
@@ -73,9 +94,9 @@ export function buildRequest(
   }
   const body = {
     model: provider.model,
-    max_tokens: provider.maxTokens,
+    max_tokens: maxTokens,
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: system },
       { role: 'user', content: user }
     ]
   }
@@ -178,12 +199,19 @@ export async function complete(
   signal: AbortSignal,
   fetchImpl: FetchLike = fetch
 ): Promise<string> {
+  // Why here: every request to a provider goes through this function, and the check sees what would be sent.
+  const sent = windowOf(ctx)
+  if (findSecret(`${sent.prefix}\n${sent.suffix}`)) {
+    return ''
+  }
   const { url, init } = buildRequest(provider, ctx)
   const response = await fetchImpl(url, { ...init, signal })
   if (!response.ok) {
     // Why status only: the body can echo the prompt, which holds the person's code.
     throw new ProviderHttpError(response.status)
   }
-  const cleaned = cleanSuggestion(extractText(provider.format, await response.json()))
+  const raw = extractText(provider.format, await response.json())
+  // Why not for prose: a fenced block is a legitimate thing to write in a document, not wrapping to strip.
+  const cleaned = isProse(ctx.languageId) ? raw : cleanSuggestion(raw)
   return trimSuffixOverlap(trimPrefixEcho(cleaned, ctx.prefix), ctx.suffix)
 }

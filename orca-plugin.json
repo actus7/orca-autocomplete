@@ -328,7 +328,6 @@
           ".bat",
           ".scala",
           ".ex",
-          ".exs",
           ".clj",
           ".pl",
           ".fs",
@@ -336,7 +335,8 @@
           ".tf",
           ".proto",
           ".graphql",
-          ".dockerfile"
+          ".dockerfile",
+          ".txt"
         ],
         "filenames": [
           "Dockerfile"
