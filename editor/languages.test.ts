@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { GENERIC, GRAMMARS, LANGUAGES, PAGES, customEditors } from './languages.mjs'
 
@@ -7,8 +7,9 @@ import { GENERIC, GRAMMARS, LANGUAGES, PAGES, customEditors } from './languages.
 const MAX_EDITORS = 16
 const MAX_EXTENSIONS_PER_EDITOR = 32
 // The catalog lists an editor with its extensions as one text of at most this many characters; a
-// longer one makes the whole listing entry mismatch the manifest.
-const MAX_LISTING_DETAIL_CHARS = 160
+// longer one makes the whole listing entry mismatch the manifest. LaTeX needs three extensions
+// (`.tex`, `.sty`, `.cls`) and the generic editor was already at 159, so the limit is 180.
+const MAX_LISTING_DETAIL_CHARS = 180
 
 const manifest = JSON.parse(readFileSync(new URL('../orca-plugin.json', import.meta.url), 'utf8'))
 
@@ -49,6 +50,19 @@ test('every extension starts with a dot and ids are unique', () => {
 test('the generic editor covers exactly the grammars that have no editor of their own', () => {
   const own = new Set(LANGUAGES.map((language) => language.id))
   assert.ok(GRAMMARS.filter((g) => !own.has(g.id)).every((g) => GENERIC.extensions.includes(g.extensions[0])))
+})
+
+test('a grammar the plugin brings itself registers the id and the extensions of the table', () => {
+  // LaTeX is the one Monaco does not ship: it lives in editor/grammars and the loader points there.
+  const own = GRAMMARS.filter((language) => existsSync(new URL(`./grammars/${language.dir}`, import.meta.url)))
+  assert.ok(own.length > 0, 'no grammar of our own is loaded')
+  for (const language of own) {
+    const source = readFileSync(new URL(`./grammars/${language.dir}/${language.dir}.contribution.ts`, import.meta.url), 'utf8')
+    assert.match(source, new RegExp(`id\\s*=\\s*'${language.id}'`), `${language.id}: the file names another language`)
+    for (const extension of language.extensions) {
+      assert.ok(source.includes(`'${extension}'`), `${language.id}: ${extension} is registered nowhere`)
+    }
+  }
 })
 
 test('the manifest lists the editors this table describes', () => {

@@ -23,6 +23,7 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "editor/src/**/*.ts",
+    "editor/grammars/**/*.ts",
     "editor/languages.mjs"
   ],
   "exclude": [

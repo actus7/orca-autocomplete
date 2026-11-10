@@ -2,6 +2,10 @@
 
 A listed version is permanent in Orca's catalog, so every change ships as a new version.
 
+## 0.3.2
+
+- **LaTeX**: `.tex`, `.sty` and `.cls` files open in the plugin's editor, get the gray suggestions, and are coloured by a LaTeX grammar of its own (Monaco ships none). `texlab`, when it is installed, is started for them too, so completion covers the commands and the labels, citations and packages of the files around the open one.
+
 ## 0.3.1
 
 - Fix: the model picked in the panel is the one that is saved and tested. Saving used to put the previous model back and test that one.

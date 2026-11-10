@@ -5,7 +5,7 @@
 // Also writes what is derived from the language table: the page of each language, the loader map and
 // the `customEditors` of orca-plugin.json.
 import { build } from 'esbuild'
-import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { GRAMMARS, PAGES, customEditors, pageFor } from './languages.mjs'
 
@@ -39,10 +39,19 @@ function writePages() {
 }
 
 function writeLoaders() {
+  // Why: Monaco ships no LaTeX grammar, so a language whose rules are not in `basic-languages` keeps
+  // its own under editor/grammars/ and the loader points there instead of into the package.
+  const local = existsSync(`${editorDir}grammars`)
+    ? readdirSync(`${editorDir}grammars`, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+    : []
+  const loaderOf = (dir) =>
+    local.includes(dir)
+      ? `() => import('../grammars/${dir}/${dir}.contribution'),`
+      : `() => import('monaco-editor/esm/vs/basic-languages/${dir}/${dir}.contribution'),`
   const dirs = [...new Set(GRAMMARS.map((language) => language.dir))].sort()
-  const lines = dirs.map(
-    (dir) => `  ${JSON.stringify(dir)}: () => import('monaco-editor/esm/vs/basic-languages/${dir}/${dir}.contribution'),`
-  )
+  const lines = dirs.map((dir) => `  ${JSON.stringify(dir)}: ${loaderOf(dir)}`)
   const byId = GRAMMARS.map((language) => `  ${JSON.stringify(language.id)}: ${JSON.stringify(language.dir)},`)
   writeIfChanged(
     `${editorDir}src/languages.generated.ts`,
