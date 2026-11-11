@@ -98,6 +98,9 @@ export const PLUGIN_OPTIONS = {
   inlineSuggest: { enabled: true, mode: 'subwordSmart' as const, showToolbar: 'onHover' as const },
   // Why: a word-completion popup or its inline preview would take the place of the AI's suggestion.
   suggest: { preview: false, showStatusBar: true },
+  // Why: after a dot the postfix templates match the text before the cursor (`name.`), so Monaco
+  // scores them above the server's members, which match nothing yet. Members first, templates after.
+  snippetSuggestions: 'bottom' as const,
   quickSuggestions: false as const
 }
 
