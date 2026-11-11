@@ -119,8 +119,11 @@ test('requests for a detached or unknown document return null instead of failing
   const { manager, done } = setup()
   try {
     assert.equal(await manager.request('nobody', 'textDocument/hover', {}), null)
+    assert.equal(manager.has('nobody'), false)
     await manager.attach({ docId: 'd1', language: 'rust', extensions: ['.rs'], content: 'fn a() { BAD }\n' })
+    assert.equal(manager.has('d1'), true)
     manager.detach('d1')
+    assert.equal(manager.has('d1'), false)
     assert.equal(await manager.request('d1', 'textDocument/hover', {}), null)
   } finally {
     done()

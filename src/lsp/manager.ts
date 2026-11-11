@@ -195,6 +195,15 @@ export class LspManager {
     })
   }
 
+  /**
+   * True while a live server holds this document. False after the worker restarted or the server
+   * stopped: the editor then attaches again instead of getting empty answers for good.
+   */
+  has(docId: string): boolean {
+    const doc = this.documents.get(docId)
+    return Boolean(doc && this.servers.get(doc.serverKey)?.alive)
+  }
+
   async request(docId: string, method: string, params: Record<string, unknown>): Promise<unknown> {
     const doc = this.documents.get(docId)
     const server = doc && this.servers.get(doc.serverKey)

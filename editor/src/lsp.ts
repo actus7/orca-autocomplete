@@ -24,6 +24,12 @@ import { sameUri } from '../../src/lsp/uri.ts'
 
 type Capabilities = Record<string, any> // the server's own JSON
 const SYNC_DELAY_MS = 150
+// Looking for the file again when it was not found: how often at most, how long after the last
+// keystroke, and how many times before giving up until the file is reopened.
+const ATTACH_GAP_MS = 8000
+const ATTACH_QUIET_MS = 2000
+const ATTACH_RETRIES = 20
+const REATTACH_GAP_MS = 5000
 // Why a number: the same constant LSP uses for "typed this trigger character".
 const LSP_TRIGGER_CHARACTER = 2
 
@@ -56,18 +62,56 @@ export async function startLanguageServer(
     }
   })
 
-  let answer
-  try {
-    answer = await orca.plugin.request('lsp.attach', {
-      docId,
-      language: options.language,
-      extensions: options.extensions,
-      content: model.getValue()
+  // --- attaching, and attaching again ---
+  const attach = async () => {
+    try {
+      const answer = await orca.plugin.request('lsp.attach', {
+        docId,
+        language: options.language,
+        extensions: options.extensions,
+        content: model.getValue()
+      })
+      return answer.status
+    } catch {
+      return null
+    }
+  }
+  /** After the text changed and went quiet, or the tab came back into view, and not sooner than the gap. */
+  const nextChance = (): Promise<void> =>
+    new Promise((resolve) => {
+      const earliest = Date.now() + ATTACH_GAP_MS
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const arm = (): void => {
+        clearTimeout(timer)
+        timer = setTimeout(() => {
+          listener.dispose()
+          document.removeEventListener('visibilitychange', onVisible)
+          resolve()
+        }, Math.max(ATTACH_QUIET_MS, earliest - Date.now()))
+      }
+      const onVisible = (): void => {
+        if (document.visibilityState === 'visible') {
+          arm()
+        }
+      }
+      const listener = model.onDidChangeContent(arm)
+      document.addEventListener('visibilitychange', onVisible)
     })
-  } catch {
+
+  let status = await attach()
+  // Why try again: a file that cannot be told apart now (not saved yet, or the worker is still starting)
+  // can be found a little later. Giving up here would leave the editor without a server until it is reopened.
+  for (
+    let attempt = 0;
+    attempt < ATTACH_RETRIES && (status === null || status.state === 'no-file' || status.state === 'ambiguous');
+    attempt += 1
+  ) {
+    await nextChance()
+    status = await attach()
+  }
+  if (status === null) {
     return
   }
-  const { status } = answer
   if (status.state === 'error') {
     showServerBadge('error', status.message)
     return
@@ -96,11 +140,35 @@ export async function startLanguageServer(
     syncTimer = setTimeout(() => void flush(), SYNC_DELAY_MS)
   })
 
+  // The worker can lose the document: it restarts when the plugin is updated, and a server can stop.
+  // Then it says so, and the document is opened again instead of staying without answers.
+  let reattaching: Promise<boolean> | null = null
+  let lastReattach = 0
+  const reattach = (): Promise<boolean> => {
+    if (reattaching) {
+      return reattaching
+    }
+    if (Date.now() - lastReattach < REATTACH_GAP_MS) {
+      return Promise.resolve(false)
+    }
+    lastReattach = Date.now()
+    reattaching = attach()
+      .then((again) => again?.state === 'ready')
+      .finally(() => {
+        reattaching = null
+      })
+    return reattaching
+  }
+
   // A request waits for the newest text first, so the answer is about what is on screen.
   async function ask(method: string, params: Record<string, unknown>): Promise<any> {
     await flush()
     try {
-      return (await orca.plugin.request('lsp.request', { docId, method, params })).result
+      let answer = await orca.plugin.request('lsp.request', { docId, method, params })
+      if (answer.detached && (await reattach())) {
+        answer = await orca.plugin.request('lsp.request', { docId, method, params })
+      }
+      return answer.result
     } catch {
       return null
     }
