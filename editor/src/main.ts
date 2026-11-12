@@ -42,7 +42,7 @@ async function start(): Promise<void> {
   // A language with a service of its own needs it ready, and sometimes a model name, before the model exists.
   const name = await prepareLanguageService(monaco, language, session.value)
   const model = monaco.editor.createModel(session.value, language, name)
-  // Orca's own editor options first, then this plugin's additions, then what Orca's settings say (or,
+  // Orca's own editor options first, then this plugin's additions, then what Orca says its editor uses (or,
   // when they cannot be read, the plugin's own settings).
   let orcaEditor: OrcaEditor | null = (await orca.plugin.request('editor.settings', {}).catch(() => ({ settings: null }))).settings
   const editor = monaco.editor.create(root, {

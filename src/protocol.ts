@@ -74,10 +74,10 @@ declare module 'orca' {
       output: { result: unknown; error?: string; detached?: boolean }
     }
     'lsp.detach': { input: { docId: string }; output: Record<string, never> }
-    /** How Orca's editor looks now, or null when Orca's settings cannot be read. */
+    /** How Orca's editor looks now, or null when Orca cannot say. */
     'editor.settings': {
       input: Record<string, never>
-      output: { settings: OrcaEditorSettings | null; source: string | null }
+      output: { settings: OrcaEditorSettings | null }
     }
     /**
      * One suggestion for the text around the cursor of the plugin's own editor; '' when there is none.

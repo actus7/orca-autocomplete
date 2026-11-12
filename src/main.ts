@@ -1,10 +1,10 @@
+import type { OrcaEditorSettings, PluginEvents } from 'orca'
 import type { Activate, OrcaWorkerApi } from 'orca/worker'
 import { complete, parseFormat, type CompletionContext, type Provider, type ProviderFormat } from './complete.ts'
 import { asPredictInput, predictEdit } from './nextedit.ts'
 import { errorMessage, explainFailure, hostOf, isLoopbackHost } from './explain.ts'
 import { pickLocale, translator, type Translate } from './i18n.ts'
 import { LspManager } from './lsp/manager.ts'
-import { EditorSettingsWatcher } from './orca-editor/watcher.ts'
 import { BENCH_BATCH_SIZE, isExpectedAnswer, listModels, median } from './models.ts'
 import { presetFor, sameAddress } from './presets.ts'
 import { REQUEST_TIMEOUT_MS, STATE_TONES, type State } from './status.ts'
@@ -143,13 +143,24 @@ function tooltipOf(state: State, config: Config | null, stats: Stats, t: Transla
 // The language servers belong to the running worker; deactivate stops them with it.
 let lspManager: LspManager | null = null
 
-let editorSettings: EditorSettingsWatcher | null = null
-
 export function deactivate(): void {
   lspManager?.dispose()
   lspManager = null
-  editorSettings?.stop()
-  editorSettings = null
+}
+
+type Typography = PluginEvents['editor.typography.changed']
+
+/** Orca's answer as the editor takes it: the full CSS font stack, as Orca's own editor renders it. */
+export function fromTypography(typography: Typography): OrcaEditorSettings {
+  return {
+    fontFamily: typography.cssFontFamily,
+    fontSize: typography.fontSize,
+    fontWeight: typography.fontWeight,
+    lineHeight: typography.lineHeight,
+    fontLigatures: typography.fontLigatures,
+    wordWrap: typography.wordWrap === 'on',
+    minimap: typography.minimap
+  }
 }
 
 const WORKSPACE_ROOTS_CACHE_MS = 5000
@@ -415,16 +426,25 @@ const activate: Activate = (orca) => {
     return {}
   })
 
-  // How Orca's own editor looks right now (font, size, wrap, minimap ...), read from Orca's settings so
-  // the plugin's editor can match it and follow every change. null when they cannot be read.
-  editorSettings = new EditorSettingsWatcher({
-    onChange: (settings) => orca.panels.post('editor.settings.changed', { settings })
+  // How Orca's own editor looks right now (font, size, wrap, minimap ...), as Orca itself reports it, so
+  // the plugin's editor can match it and follow every change. null when it cannot be read: the plugin's
+  // own settings apply then.
+  let editorLook: OrcaEditorSettings | null = null
+  // Why the event first: it can arrive while the first read is on its way, and it is the newer value.
+  orca.events.on('editor.typography.changed', (typography) => {
+    editorLook = fromTypography(typography)
+    orca.panels.post('editor.settings.changed', { settings: editorLook })
   })
-  const watcher = editorSettings
-  // Why now: finding Orca's data folder asks the system about the process above this one, which takes a
-  // few seconds on Windows. Doing it while the plugin loads keeps the first file from waiting for it.
-  void watcher.start()
-  orca.panels.handle('editor.settings', async () => ({ settings: await watcher.start(), source: watcher.source() }))
+  const firstLook = orca.host
+    .call('editor.readTypography', {})
+    .then((typography) => {
+      editorLook ??= fromTypography(typography)
+    })
+    .catch(() => undefined)
+  orca.panels.handle('editor.settings', async () => {
+    await firstLook
+    return { settings: editorLook }
+  })
 
   orca.panels.handle('completion.ask', async (context) => {
     const { text, model } = await suggest(context)

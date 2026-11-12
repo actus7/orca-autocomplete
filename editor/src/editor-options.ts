@@ -11,7 +11,7 @@ const FONT_SIZE_MAX = 24
 /** The size Orca uses when none is set. */
 export const FONT_SIZE_DEFAULT = 13
 
-/** What Orca's own editor uses, read from Orca's settings by the plugin's worker. */
+/** What Orca's own editor uses, as Orca reports it to the plugin's worker (editor.readTypography). */
 export type OrcaEditor = {
   fontFamily: string
   fontSize: number

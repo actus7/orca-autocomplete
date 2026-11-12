@@ -2,9 +2,14 @@
 
 A listed version is permanent in Orca's catalog, so every change ships as a new version.
 
-## 0.3.2
+## 0.4.0
 
-- **LaTeX**: `.tex`, `.sty` and `.cls` files open in the plugin's editor, get the gray suggestions, and are coloured by a LaTeX grammar of its own (Monaco ships none). `texlab`, when it is installed, is started for them too, so completion covers the commands and the labels, citations and packages of the files around the open one.
+Needs Orca 1.4.257 or newer.
+
+- **Orca's typography from Orca**: the editor's font, size (editor zoom included), weight, line height, ligatures, word wrap and minimap now come from `editor.readTypography` and `editor.typography.changed` (plugin host API 1.6), so a change shows up at once. The plugin no longer looks for Orca's data folder, walks parent processes or opens Orca's profile database. Thanks to @nwparker ([#1](https://github.com/actus7/orca-autocomplete/issues/1)).
+- **LaTeX** ([#2](https://github.com/actus7/orca-autocomplete/pull/2), thanks to @MichielSaey): `.tex` and `.sty` files open in the plugin's editor, get the gray suggestions, and are coloured by a LaTeX grammar of its own (Monaco ships none). `texlab`, when it is installed, is started for them too, so completion covers the commands and the labels, citations and packages of the files around the open one. `.cls` and `.dockerfile` are left out of the editor's file types: Orca's catalog caps that list at 160 characters (`Dockerfile` itself still opens here).
+- Fix ([#3](https://github.com/actus7/orca-autocomplete/pull/3), thanks to @mrWD): after a dot, the language server's members are listed again, above snippets and postfix templates.
+- Fix ([#4](https://github.com/actus7/orca-autocomplete/pull/4), thanks to @mrWD): a file opened with unsaved edits gets its language server (the file it came from is found by the lines they share), and the editor attaches again when the worker lost the document, for example after the plugin was updated.
 
 ## 0.3.1
 

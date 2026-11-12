@@ -2,13 +2,13 @@
   "manifestVersion": 2,
   "id": "autocomplete",
   "name": "Autocomplete",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "execution": "trusted-worker",
   "description": "Gray inline suggestions as you type, powered by the AI provider you choose (OpenAI, Anthropic, OpenRouter, Mistral, Ollama or any compatible API), plus snippets, postfix templates and language servers with the AI off.",
   "license": "MIT",
   "repository": "https://github.com/actus7/orca-autocomplete",
   "engines": {
-    "orca": ">=1.4.248"
+    "orca": ">=1.4.257"
   },
   "main": "src/main.ts",
   "contributes": {
@@ -19,6 +19,11 @@
         "icon": "zap",
         "entry": "src/panel.tsx",
         "ui": "components"
+      }
+    ],
+    "events": [
+      {
+        "on": "editor.typography.changed"
       }
     ],
     "settings": [
@@ -346,10 +351,8 @@
           ".tf",
           ".proto",
           ".graphql",
-          ".dockerfile",
           ".tex",
           ".sty",
-          ".cls",
           ".txt"
         ],
         "filenames": [

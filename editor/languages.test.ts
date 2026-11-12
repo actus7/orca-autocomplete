@@ -7,9 +7,9 @@ import { GENERIC, GRAMMARS, LANGUAGES, PAGES, customEditors } from './languages.
 const MAX_EDITORS = 16
 const MAX_EXTENSIONS_PER_EDITOR = 32
 // The catalog lists an editor with its extensions as one text of at most this many characters; a
-// longer one makes the whole listing entry mismatch the manifest. LaTeX needs three extensions
-// (`.tex`, `.sty`, `.cls`) and the generic editor was already at 159, so the limit is 180.
-const MAX_LISTING_DETAIL_CHARS = 180
+// longer one makes the whole listing entry mismatch the manifest. Orca's catalog schema says so:
+// `detail: z.string().max(160)` in src/shared/plugins/contributions/plugin-contribution-summary.ts.
+const MAX_LISTING_DETAIL_CHARS = 160
 
 const manifest = JSON.parse(readFileSync(new URL('../orca-plugin.json', import.meta.url), 'utf8'))
 
@@ -49,7 +49,10 @@ test('every extension starts with a dot and ids are unique', () => {
 
 test('the generic editor covers exactly the grammars that have no editor of their own', () => {
   const own = new Set(LANGUAGES.map((language) => language.id))
-  assert.ok(GRAMMARS.filter((g) => !own.has(g.id)).every((g) => GENERIC.extensions.includes(g.extensions[0])))
+  // Dockerfile is matched by its name alone (the listing limit left `.dockerfile` out).
+  const opens = (g: (typeof GRAMMARS)[number]) =>
+    g.extensions.length ? GENERIC.extensions.includes(g.extensions[0]) : g.filenames?.some((name: string) => GENERIC.filenames?.includes(name))
+  assert.ok(GRAMMARS.filter((g) => !own.has(g.id)).every(opens))
 })
 
 test('a grammar the plugin brings itself registers the id and the extensions of the table', () => {

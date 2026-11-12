@@ -54,9 +54,10 @@ const GENERIC_LANGUAGES = [
   { id: 'hcl', title: 'HCL', dir: 'hcl', extensions: ['.tf'] },
   { id: 'protobuf', title: 'Protocol Buffers', dir: 'protobuf', extensions: ['.proto'] },
   { id: 'graphql', title: 'GraphQL', dir: 'graphql', extensions: ['.graphql'] },
-  { id: 'dockerfile', title: 'Dockerfile', dir: 'dockerfile', extensions: ['.dockerfile'], filenames: ['Dockerfile'] },
+  // `.dockerfile` and LaTeX's `.cls` are left out for the same limit: `Dockerfile` keeps the usual name.
+  { id: 'dockerfile', title: 'Dockerfile', dir: 'dockerfile', extensions: [], filenames: ['Dockerfile'] },
   // Monaco has no LaTeX grammar, so this one is the plugin's own (editor/grammars/latex).
-  { id: 'latex', title: 'LaTeX', dir: 'latex', extensions: ['.tex', '.sty', '.cls'] }
+  { id: 'latex', title: 'LaTeX', dir: 'latex', extensions: ['.tex', '.sty'] }
 ]
 
 export const GENERIC = {

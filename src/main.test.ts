@@ -35,7 +35,9 @@ async function mountWorker(
   const posts: { event: string; payload: Json }[] = []
   const logs: string[] = []
   const disposable = { dispose() {} }
+  const listeners = new Map<string, (payload: Json) => void>()
   const orca = {
+    events: { on: (event: string, fn: never) => (listeners.set(event, fn), disposable) },
     panels: {
       handle: (name: string, fn: never) => (handlers.set(name, fn), disposable),
       post: (event: string, payload: Json) => void posts.push({ event, payload })
@@ -46,6 +48,7 @@ async function mountWorker(
         if (method === 'statusBar.update') {
           statusUpdates.push(params)
         }
+        return method === 'editor.readTypography' ? TYPOGRAPHY : undefined
       }
     },
     settings: {
@@ -83,9 +86,33 @@ async function mountWorker(
       return suggestion ? { ...event, suggestion } : event
     },
     request: (name: string, input: Json = {}) => handlers.get(name)!(input),
+    emit: (event: string, payload: Json) => listeners.get(event)!(payload),
     command: (name: string) => commands.get(name)!()
   }
 }
+
+const TYPOGRAPHY = {
+  fontFamily: 'Fira Code',
+  cssFontFamily: '"Fira Code", monospace',
+  fontSize: 15,
+  fontWeight: '400',
+  lineHeight: 0,
+  fontLigatures: true,
+  wordWrap: 'off',
+  minimap: false
+}
+
+test("the editor gets Orca's typography, and each change after", async () => {
+  const plugin = await mountWorker()
+  assert.deepEqual(await plugin.request('editor.settings'), {
+    settings: { fontFamily: '"Fira Code", monospace', fontSize: 15, fontWeight: '400', lineHeight: 0, fontLigatures: true, wordWrap: false, minimap: false }
+  })
+  plugin.emit('editor.typography.changed', { ...TYPOGRAPHY, fontSize: 18, wordWrap: 'on' })
+  const change = plugin.posts.at(-1)!
+  assert.equal(change.event, 'editor.settings.changed')
+  assert.deepEqual(change.payload, { settings: { fontFamily: '"Fira Code", monospace', fontSize: 18, fontWeight: '400', lineHeight: 0, fontLigatures: true, wordWrap: true, minimap: false } })
+  assert.equal(((await plugin.request('editor.settings')) as { settings: { fontSize: number } }).settings.fontSize, 18)
+})
 
 function stubFetch(status: number, body: unknown): () => void {
   const real = globalThis.fetch
@@ -592,6 +619,8 @@ test('a timeout is recorded as a slow sample, so a slow model never looks fast',
   const real = globalThis.fetch
   globalThis.fetch = (async (_url: string, init: { signal: AbortSignal }) =>
     new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason)))) as never
+  // Why: AbortSignal.timeout does not keep Node running, and in a test nothing else does (Orca's link does in the worker).
+  const keepAlive = setInterval(() => undefined, 1000)
   try {
     const worker = await mountWorker()
     await worker.fire(asked)
@@ -599,6 +628,7 @@ test('a timeout is recorded as a slow sample, so a slow model never looks fast',
     const { usage } = await usageFor(worker, 'http://localhost:11434/v1')
     assert.equal(usage.m.ms, 1800)
   } finally {
+    clearInterval(keepAlive)
     globalThis.fetch = real
   }
 })
