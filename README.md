@@ -14,7 +14,7 @@ orca plugin install actus7/orca-autocomplete
 
 Orca lists what the plugin asks for and prints a fingerprint. Accept it by running the same command again with `--approve <fingerprint>`. You can also install it from *Settings → Plugins*.
 
-> **Requires Orca 1.4.248 or newer** (tested on 1.4.255). The plugin brings its own editor (Monaco), so it does not depend on any change to Orca itself.
+> **Requires Orca 1.4.257 or newer** (tested on 1.4.257), the release that reports its editor's typography to plugins. For an older Orca, use version 0.3.1. The plugin brings its own editor (Monaco).
 
 <p align="center"><img src="assets/screenshot-editor.png" alt="A Python function in the Autocomplete editor where the gray suggestion a + b follows the cursor after return" width="820"></p>
 
@@ -127,7 +127,7 @@ O painel, a barra de status e os avisos aparecem em português quando o Orca est
 orca plugin install actus7/orca-autocomplete
 ```
 
-O Orca mostra o que o plugin pede e um *fingerprint*. Para aceitar, rode o mesmo comando de novo com `--approve <fingerprint>`. Também dá para instalar em *Settings → Plugins*. Requer o Orca 1.4.248 ou mais novo.
+O Orca mostra o que o plugin pede e um *fingerprint*. Para aceitar, rode o mesmo comando de novo com `--approve <fingerprint>`. Também dá para instalar em *Settings → Plugins*. Requer o Orca 1.4.257 ou mais novo (para um Orca mais antigo, use a versão 0.3.1).
 
 **Começo rápido**
 1. Abra o painel **Autocomplete** (o raio na barra lateral direita).
