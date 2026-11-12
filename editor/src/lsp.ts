@@ -114,7 +114,10 @@ export async function startLanguageServer(
   if (capabilities.completionProvider) {
     // The server's own item for each suggestion shown: resolving it later needs exactly what the server sent.
     const serverItems = new WeakMap<object, unknown>()
-    monaco.languages.registerCompletionItemProvider('*', {
+    // Why the model's own language and not '*': Monaco asks completion providers group by group, the
+    // most specific selector first, and stops at the first group that offers anything. Snippets and
+    // postfix templates are registered for a language, so with '*' the server was never asked after a dot.
+    monaco.languages.registerCompletionItemProvider(model.getLanguageId(), {
       triggerCharacters: capabilities.completionProvider.triggerCharacters,
       async provideCompletionItems(m, position, context) {
         if (!ours(m)) {
