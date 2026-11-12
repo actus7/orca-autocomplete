@@ -88,6 +88,43 @@ test('locateFile says ambiguous for identical files and none for no match', asyn
   }
 })
 
+const lines = (count: number, name: string): string => Array.from({ length: count }, (_, i) => `let ${name}_${i} = ${i};`).join('\n') + '\n'
+
+test('locateFile finds the file a document with unsaved edits was opened from', async () => {
+  const { root, done } = workspace()
+  try {
+    writeFileSync(join(root, 'src', 'a.rs'), lines(12, 'a'))
+    writeFileSync(join(root, 'src', 'b.rs'), lines(12, 'b'))
+    const edited = lines(12, 'b') + 'let typed = b_0.\n'
+    assert.deepEqual(await locateFile([root], ['.rs'], edited), { status: 'found', path: join(root, 'src', 'b.rs'), root, approximate: true })
+  } finally {
+    done()
+  }
+})
+
+test('locateFile does not guess between two files that are equally like the document', async () => {
+  const { root, done } = workspace()
+  try {
+    writeFileSync(join(root, 'src', 'one.rs'), lines(12, 'x') + 'let one = 1;\n')
+    writeFileSync(join(root, 'src', 'two.rs'), lines(12, 'x') + 'let two = 2;\n')
+    assert.deepEqual(await locateFile([root], ['.rs'], lines(12, 'x') + 'let three = 3;\n'), { status: 'ambiguous' })
+  } finally {
+    done()
+  }
+})
+
+test('locateFile says none for a document that shares too little with every file', async () => {
+  const { root, done } = workspace()
+  try {
+    writeFileSync(join(root, 'src', 'a.rs'), lines(12, 'a'))
+    assert.deepEqual(await locateFile([root], ['.rs'], lines(12, 'new')), { status: 'none' })
+    // Why: a couple of lines say too little about which file this is.
+    assert.deepEqual(await locateFile([root], ['.rs'], 'let a_0 = 0;\nlet a_1 = 1;\n'), { status: 'none' })
+  } finally {
+    done()
+  }
+})
+
 test('locateFile matches an exact file name such as Gemfile', async () => {
   const { root, done } = workspace()
   try {

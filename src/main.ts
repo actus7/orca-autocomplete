@@ -401,6 +401,9 @@ const activate: Activate = (orca) => {
     return {}
   })
   orca.panels.handle('lsp.request', async ({ docId, method, params }) => {
+    if (!lsp.has(docId)) {
+      return { result: null, detached: true }
+    }
     try {
       return { result: await lsp.request(docId, method, params) }
     } catch (error) {

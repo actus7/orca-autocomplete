@@ -70,7 +70,8 @@ declare module 'orca' {
     /** Any LSP request about the document (the worker adds the document's address). */
     'lsp.request': {
       input: { docId: string; method: string; params: Record<string, unknown> }
-      output: { result: unknown; error?: string }
+      /** `detached`: no live server holds this document any more, so attach again before asking. */
+      output: { result: unknown; error?: string; detached?: boolean }
     }
     'lsp.detach': { input: { docId: string }; output: Record<string, never> }
     /** How Orca's editor looks now, or null when Orca's settings cannot be read. */
