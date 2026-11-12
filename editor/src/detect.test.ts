@@ -18,7 +18,8 @@ const cases: [string, string][] = [
   ['markdown', '# Title\n\nSome text\n'],
   ['yaml', 'name: app\nitems:\n  - one\n  - two\n'],
   ['scss', '.card {\n  color: red;\n}\n'],
-  ['less', '@color: #333;\n.card { color: @color; }\n']
+  ['less', '@color: #333;\n.card { color: @color; }\n'],
+  ['latex', '\\documentclass{article}\n\\begin{document}\nHello.\n\\end{document}\n']
 ]
 
 for (const [expected, text] of cases) {

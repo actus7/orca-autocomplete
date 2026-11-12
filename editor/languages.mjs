@@ -44,7 +44,8 @@ const GENERIC_LANGUAGES = [
   { id: 'powershell', title: 'PowerShell', dir: 'powershell', extensions: ['.ps1'] },
   { id: 'bat', title: 'Batch', dir: 'bat', extensions: ['.bat'] },
   { id: 'scala', title: 'Scala', dir: 'scala', extensions: ['.scala'] },
-  // `.exs` is left out: the catalog's listing text for this editor is limited to 160 characters and is at the limit.
+  // `.exs` is left out: the catalog's listing text for this editor is limited in length, and the
+  // check that keeps every listing entry matching the manifest lives in languages.test.ts.
   { id: 'elixir', title: 'Elixir', dir: 'elixir', extensions: ['.ex'] },
   { id: 'clojure', title: 'Clojure', dir: 'clojure', extensions: ['.clj'] },
   { id: 'perl', title: 'Perl', dir: 'perl', extensions: ['.pl'] },
@@ -53,7 +54,9 @@ const GENERIC_LANGUAGES = [
   { id: 'hcl', title: 'HCL', dir: 'hcl', extensions: ['.tf'] },
   { id: 'protobuf', title: 'Protocol Buffers', dir: 'protobuf', extensions: ['.proto'] },
   { id: 'graphql', title: 'GraphQL', dir: 'graphql', extensions: ['.graphql'] },
-  { id: 'dockerfile', title: 'Dockerfile', dir: 'dockerfile', extensions: ['.dockerfile'], filenames: ['Dockerfile'] }
+  { id: 'dockerfile', title: 'Dockerfile', dir: 'dockerfile', extensions: ['.dockerfile'], filenames: ['Dockerfile'] },
+  // Monaco has no LaTeX grammar, so this one is the plugin's own (editor/grammars/latex).
+  { id: 'latex', title: 'LaTeX', dir: 'latex', extensions: ['.tex', '.sty', '.cls'] }
 ]
 
 export const GENERIC = {

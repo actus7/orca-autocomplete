@@ -68,7 +68,10 @@ const SERVERS: Record<string, readonly ServerSpec[]> = {
   shell: [{ name: 'bash-language-server', command: 'bash-language-server', args: ['start'] }],
   lua: [{ name: 'lua-language-server', command: 'lua-language-server', args: [] }],
   dart: [{ name: 'dart', command: 'dart', args: ['language-server', '--protocol=lsp'] }],
-  yaml: [{ name: 'yaml-language-server', command: 'yaml-language-server', args: ['--stdio'] }]
+  yaml: [{ name: 'yaml-language-server', command: 'yaml-language-server', args: ['--stdio'] }],
+  // texlab serves the whole LaTeX project: completion for its commands, and of the labels, citations
+  // and packages the files around the open one define.
+  latex: [{ name: 'texlab', command: 'texlab', args: [] }]
 }
 
 /** The LSP `languageId` for a file, which is finer than the editor's language (tsx, c versus cpp). */
@@ -88,7 +91,11 @@ const LSP_LANGUAGE_BY_EXTENSION: Record<string, string> = {
   '.cxx': 'cpp',
   '.hpp': 'cpp',
   '.hh': 'cpp',
-  '.hxx': 'cpp'
+  '.hxx': 'cpp',
+  // texlab takes the same `latex` id for a document, a class and a package.
+  '.tex': 'latex',
+  '.sty': 'latex',
+  '.cls': 'latex'
 }
 
 export function lspLanguageId(editorLanguage: string, filePath: string): string {

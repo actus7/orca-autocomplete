@@ -23,6 +23,8 @@ const RULES: readonly Rule[] = [
   { id: 'fsharp', test: /^\s*(let\s+(rec\s+)?\w+.*=|module\s+\w+|open\s+System)\s*$|^\s*let\s+\w+\s+.*=\s*$/m },
   { id: 'julia', test: /^\s*using\s+[A-Z]\w*\s*$|^\s*function\s+\w+\s*\(.*\)\s*$[\s\S]*^\s*end\s*$/m },
   { id: 'r', test: /<-\s|^\s*library\(\w+\)|\bfunction\s*\(.*\)\s*\{[\s\S]*\}/m },
+  // LaTeX before XML: both are markup, and `\begin{...}` is the one shape XML never has.
+  { id: 'latex', test: /\\documentclass\b|\\usepackage\b|\\begin\s*\{|\\newcommand\b|\\includeonly\b/ },
   { id: 'xml', test: /^\s*<\?xml\b|^\s*<[A-Za-z][\w:-]*(\s+[\w:-]+="[^"]*")*\s*>/m },
   { id: 'markdown', test: /^#{1,6}\s+\S|^\s*[-*]\s+\[[ x]\]|^```/m },
   { id: 'less', test: /^\s*@[\w-]+\s*:\s*[^;]+;|^\s*\.[\w-]+\s*\(.*\)\s*;/m },

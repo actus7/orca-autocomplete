@@ -16,6 +16,7 @@ export const grammarLoaders: Record<string, () => Promise<unknown>> = {
   "javascript": () => import('monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution'),
   "julia": () => import('monaco-editor/esm/vs/basic-languages/julia/julia.contribution'),
   "kotlin": () => import('monaco-editor/esm/vs/basic-languages/kotlin/kotlin.contribution'),
+  "latex": () => import('../grammars/latex/latex.contribution'),
   "less": () => import('monaco-editor/esm/vs/basic-languages/less/less.contribution'),
   "lua": () => import('monaco-editor/esm/vs/basic-languages/lua/lua.contribution'),
   "markdown": () => import('monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution'),
@@ -73,4 +74,5 @@ export const grammarOf: Record<string, string> = {
   "protobuf": "protobuf",
   "graphql": "graphql",
   "dockerfile": "dockerfile",
+  "latex": "latex",
 }
